@@ -345,7 +345,7 @@ function LobbyList({ lobbies, onJoin, joinedLobbyId }) {
   );
 }
 
-function BuyInPanel({ player, onRequestBuyIn, onAddChip, onClearBet, disabled }) {
+function BuyInPanel({ player, onRequestBuyIn, onAddChip, onClearBet, onAllIn, disabled }) {
   const [amount, setAmount] = useState("");
   const availableToBet = Math.max(0, Number(player?.bankroll || 0) - Number(player?.pendingBet || 0));
   const buyInApproved = player?.buyInStatus === "approved" || Number(player?.bankroll || 0) > 0;
@@ -436,6 +436,13 @@ function BuyInPanel({ player, onRequestBuyIn, onAddChip, onClearBet, disabled })
               +{currency(chip)}
             </button>
           ))}
+          <button
+            className="secondary-button"
+            disabled={disabled || !buyInApproved || availableToBet <= 0}
+            onClick={() => onAllIn(availableToBet)}
+          >
+            All in
+          </button>
         </div>
       </SectionCard>
     </div>
@@ -533,7 +540,7 @@ function PlayerTable({ lobby, player, onAction, revealComplete }) {
   );
 }
 
-function PlayerLobbyView({ lobby, playerId, onRequestBuyIn, onAddChip, onClearBet, onAction, onLeave }) {
+function PlayerLobbyView({ lobby, playerId, onRequestBuyIn, onAddChip, onClearBet, onAllIn, onAction, onLeave }) {
   const player = useMemo(() => lobby?.players?.find((entry) => entry.id === playerId), [lobby, playerId]);
   const previousStatusRef = useRef(lobby?.status || "waiting");
   const displayedBankrollRef = useRef(player?.bankroll || 0);
@@ -639,6 +646,7 @@ function PlayerLobbyView({ lobby, playerId, onRequestBuyIn, onAddChip, onClearBe
             onRequestBuyIn={onRequestBuyIn}
             onAddChip={onAddChip}
             onClearBet={onClearBet}
+            onAllIn={onAllIn}
             disabled={bettingLocked}
           />
         </SectionCard>
@@ -1161,6 +1169,16 @@ export default function App() {
     setError(response.ok ? "" : response.message);
   }
 
+  async function allIn(amount) {
+    const response = await emitAsync("player:addChip", {
+      lobbyId: playerSession.lobbyId,
+      playerId: playerSession.playerId,
+      amount,
+    });
+
+    setError(response.ok ? "" : response.message);
+  }
+
   async function clearBet() {
     const response = await emitAsync("player:clearBet", {
       lobbyId: playerSession.lobbyId,
@@ -1279,6 +1297,7 @@ export default function App() {
               onRequestBuyIn={requestBuyIn}
               onAddChip={addChip}
               onClearBet={clearBet}
+              onAllIn={allIn}
               onAction={playerAction}
               onLeave={leaveLobby}
             />
