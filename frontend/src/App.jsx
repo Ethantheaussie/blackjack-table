@@ -442,7 +442,7 @@ function BuyInPanel({ player, onRequestBuyIn, onAddChip, onClearBet, disabled })
   );
 }
 
-function PlayerTable({ lobby, player, onAction }) {
+function PlayerTable({ lobby, player, onAction, revealComplete }) {
   const isTurn = lobby?.round?.activePlayerId === player?.id;
   const activeHand = player?.hands?.[player?.activeHandIndex || 0];
   const canDouble = isTurn && activeHand?.cards?.length === 2 && player?.bankroll >= activeHand?.bet;
@@ -471,7 +471,11 @@ function PlayerTable({ lobby, player, onAction }) {
 
       <SectionCard
         title="Your Hands"
-        subtitle={player?.lastResult ? `Last result: ${player.lastResult}` : "Play only when your hand is active."}
+        subtitle={
+          revealComplete && player?.lastResult
+            ? `Last result: ${player.lastResult}`
+            : "Play only when your hand is active."
+        }
       >
         <div className="hand-grid">
           {(player?.hands || []).length ? (
@@ -487,16 +491,18 @@ function PlayerTable({ lobby, player, onAction }) {
                   </div>
                   <StatusPill
                     tone={
-                      hand.result === "win" || hand.result === "blackjack"
+                      revealComplete && (hand.result === "win" || hand.result === "blackjack")
                         ? "success"
-                        : hand.result === "push"
+                        : revealComplete && hand.result === "push"
                           ? "neutral"
-                          : hand.result
+                          : revealComplete && hand.result
                             ? "danger"
                             : "warning"
                     }
                   >
-                    {hand.result || (hand.busted ? "busted" : hand.blackjack ? "blackjack" : "active")}
+                    {revealComplete
+                      ? hand.result || (hand.busted ? "busted" : hand.blackjack ? "blackjack" : "active")
+                      : "active"}
                   </StatusPill>
                 </div>
                 <HandCards cards={hand.cards} />
@@ -533,7 +539,22 @@ function PlayerLobbyView({ lobby, playerId, onRequestBuyIn, onAddChip, onClearBe
   const displayedBankrollRef = useRef(player?.bankroll || 0);
   const [winFlashAmount, setWinFlashAmount] = useState(0);
   const [displayedBankroll, setDisplayedBankroll] = useState(Number(player?.bankroll || 0));
+  const [now, setNow] = useState(Date.now());
   const bettingLocked = lobby?.status === "in_progress";
+  const revealComplete =
+    lobby?.status !== "finished" || !lobby?.round?.resetAvailableAt
+      ? true
+      : now >= Number(lobby.round.resetAvailableAt);
+
+  useEffect(() => {
+    if (lobby?.status !== "finished" || !lobby?.round?.resetAvailableAt) {
+      setNow(Date.now());
+      return undefined;
+    }
+
+    const interval = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(interval);
+  }, [lobby?.status, lobby?.round?.resetAvailableAt]);
 
   useEffect(() => {
     if (!lobby || !player) {
@@ -607,7 +628,11 @@ function PlayerLobbyView({ lobby, playerId, onRequestBuyIn, onAddChip, onClearBe
       <div className="content-grid player-layout">
         <SectionCard
           title="Your Seat"
-          subtitle={player.lastResult ? `Last result: ${player.lastResult}` : "Manage bankroll and place the next wager here."}
+          subtitle={
+            revealComplete && player.lastResult
+              ? `Last result: ${player.lastResult}`
+              : "Manage bankroll and place the next wager here."
+          }
         >
           <BuyInPanel
             player={{ ...player, bankroll: displayedBankroll }}
@@ -618,7 +643,7 @@ function PlayerLobbyView({ lobby, playerId, onRequestBuyIn, onAddChip, onClearBe
           />
         </SectionCard>
 
-        <PlayerTable lobby={lobby} player={player} onAction={onAction} />
+        <PlayerTable lobby={lobby} player={player} onAction={onAction} revealComplete={revealComplete} />
       </div>
 
       <div className="content-grid player-seats-layout">
