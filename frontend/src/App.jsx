@@ -234,8 +234,8 @@ function DealerRoundSummary({ lobby, onResolveRound, onResetRound }) {
 }
 
 function DealerLogin({ onLogin, busy, error }) {
-  const [username, setUsername] = useState("ethan");
-  const [password, setPassword] = useState("2134asdf");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   return (
     <div className="auth-card">
@@ -249,7 +249,11 @@ function DealerLogin({ onLogin, busy, error }) {
 
       <label>
         Username
-        <input value={username} onChange={(event) => setUsername(event.target.value)} />
+        <input
+          value={username}
+          placeholder="Dealer username"
+          onChange={(event) => setUsername(event.target.value)}
+        />
       </label>
 
       <label>
@@ -257,6 +261,7 @@ function DealerLogin({ onLogin, busy, error }) {
         <input
           type="password"
           value={password}
+          placeholder="Dealer password"
           onChange={(event) => setPassword(event.target.value)}
         />
       </label>
