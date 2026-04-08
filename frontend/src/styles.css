@@ -1,0 +1,593 @@
+:root {
+  color-scheme: dark;
+  --bg: #071b18;
+  --bg-deep: #03100e;
+  --panel: rgba(7, 31, 27, 0.82);
+  --line: rgba(211, 195, 142, 0.18);
+  --gold: #f0ca70;
+  --gold-strong: #f9df9a;
+  --cream: #f7f1df;
+  --text: #f6f3e8;
+  --muted: #b9c6be;
+  --success: #4cd39f;
+  --danger: #ff7b7b;
+  --warning: #ffbb5c;
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+  font-family: "Outfit", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(240, 202, 112, 0.15), transparent 25%),
+    radial-gradient(circle at bottom right, rgba(74, 211, 159, 0.18), transparent 30%),
+    linear-gradient(135deg, #02100f 0%, #07211d 55%, #0e312b 100%);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 0;
+}
+
+input {
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(6, 19, 17, 0.85);
+  color: var(--text);
+}
+
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+  padding: 2rem;
+  overflow: hidden;
+}
+
+.win-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.win-overlay-text {
+  padding: 1rem 1.6rem;
+  border-radius: 22px;
+  background: rgba(76, 211, 159, 0.16);
+  border: 1px solid rgba(76, 211, 159, 0.35);
+  color: #9ff4cf;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  animation: win-pop 3.2s ease forwards;
+}
+
+.ambient {
+  position: absolute;
+  width: 28rem;
+  height: 28rem;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.ambient-left {
+  top: -6rem;
+  left: -8rem;
+  background: rgba(240, 202, 112, 0.32);
+}
+
+.ambient-right {
+  right: -8rem;
+  bottom: -8rem;
+  background: rgba(76, 211, 159, 0.24);
+}
+
+.hero,
+.panel,
+.auth-card,
+.menu-tile {
+  position: relative;
+  z-index: 1;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-family: "Playfair Display", serif;
+  font-size: clamp(2.6rem, 5vw, 4.4rem);
+}
+
+.hero-copy {
+  max-width: 52rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.eyebrow {
+  margin: 0 0 0.4rem;
+  color: var(--gold);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.menu-grid,
+.content-grid,
+.bankroll-grid,
+.hand-grid,
+.lobby-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.menu-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.two-column {
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+}
+
+.player-layout {
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.player-seats-layout {
+  grid-template-columns: 1fr;
+}
+
+.menu-tile,
+.auth-card,
+.panel {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(9, 34, 30, 0.9), rgba(5, 23, 20, 0.92));
+  border-radius: 28px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+}
+
+.menu-tile {
+  padding: 1.5rem;
+  text-align: left;
+  transition: transform 180ms ease, border-color 180ms ease;
+}
+
+.menu-tile:hover,
+.lobby-selector:hover {
+  transform: translateY(-2px);
+  border-color: rgba(240, 202, 112, 0.4);
+}
+
+.tile-kicker {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(240, 202, 112, 0.14);
+  color: var(--gold);
+  margin-bottom: 1rem;
+}
+
+.auth-card {
+  width: min(100%, 32rem);
+  margin: 0 auto;
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.panel {
+  padding: 1.25rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.panel-header,
+.dealer-player-header,
+.lobby-card-top,
+.hand-top,
+.status-row,
+.buyin-row,
+.dealer-toolbar,
+.dealer-hand-panel,
+.seat-row,
+.toggle-row,
+.hero-actions,
+.inline-actions,
+.seat-meta,
+.actions-row,
+.chip-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.bet-builder {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+  margin-bottom: 0.9rem;
+}
+
+.panel-header,
+.dealer-player-header,
+.lobby-card-top,
+.hand-top,
+.seat-row,
+.dealer-hand-panel {
+  justify-content: space-between;
+}
+
+.panel-header h3,
+.lobby-card h4,
+.dealer-player-card h4,
+.hand-card h4 {
+  margin: 0;
+}
+
+.panel-header p,
+.dealer-player-card p,
+.lobby-card p,
+.seat-row p,
+.muted {
+  color: var(--muted);
+}
+
+.stack {
+  display: grid;
+  min-width: 0;
+}
+
+.gap-sm {
+  gap: 0.75rem;
+}
+
+.gap-md {
+  gap: 1rem;
+}
+
+.primary-button,
+.secondary-button,
+.ghost-button,
+.danger-button,
+.chip-button,
+.lobby-selector {
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+}
+
+.primary-button {
+  background: linear-gradient(135deg, #f7d98a, #b78935);
+  color: #1b1608;
+  font-weight: 700;
+}
+
+.secondary-button {
+  background: rgba(240, 202, 112, 0.12);
+  color: var(--gold-strong);
+  border: 1px solid rgba(240, 202, 112, 0.18);
+}
+
+.ghost-button {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--cream);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.danger-button {
+  background: rgba(255, 123, 123, 0.16);
+  color: #ffd7d7;
+  border: 1px solid rgba(255, 123, 123, 0.3);
+}
+
+.chip-button {
+  background: radial-gradient(circle at top, rgba(249, 223, 154, 0.5), rgba(164, 111, 28, 0.96));
+  color: #181208;
+  font-weight: 700;
+  min-width: 6rem;
+}
+
+.bet-reset-button {
+  min-width: 11rem;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.ghost-button:disabled,
+.danger-button:disabled,
+.chip-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.metric-card,
+.lobby-card,
+.dealer-player-card,
+.hand-card,
+.empty-state,
+.lobby-selector,
+.info-banner,
+.warning-banner {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 20px;
+}
+
+.metric-card,
+.empty-state {
+  padding: 1rem;
+}
+
+.info-banner {
+  padding: 0.85rem 1rem;
+  color: var(--gold-strong);
+  background: rgba(240, 202, 112, 0.08);
+}
+
+.warning-banner {
+  padding: 0.85rem 1rem;
+  color: #ffd7d7;
+  background: rgba(255, 123, 123, 0.12);
+  margin-bottom: 1rem;
+}
+
+.metric-card {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.metric-card strong {
+  font-size: 1.4rem;
+}
+
+.metric-card span {
+  font-size: 0.9rem;
+}
+
+.compact {
+  min-width: 140px;
+}
+
+.lobby-card,
+.dealer-player-card,
+.hand-card,
+.lobby-selector {
+  padding: 1rem;
+}
+
+.lobby-selector {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lobby-selector-active {
+  border-color: rgba(240, 202, 112, 0.42);
+  background: rgba(240, 202, 112, 0.08);
+}
+
+.hand-card-active {
+  border-color: rgba(240, 202, 112, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(240, 202, 112, 0.16);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+
+.pill-success {
+  background: rgba(76, 211, 159, 0.16);
+  color: var(--success);
+}
+
+.pill-warning {
+  background: rgba(255, 187, 92, 0.16);
+  color: var(--warning);
+}
+
+.pill-danger {
+  background: rgba(255, 123, 123, 0.16);
+  color: var(--danger);
+}
+
+.pill-neutral {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--cream);
+}
+
+.card-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.75rem;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+}
+
+.chip-row {
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.card-face {
+  width: 74px;
+  height: 108px;
+  padding: 0.8rem 0.7rem;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fffdfa, #e8dfcd);
+  color: #16120e;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 18px 35px rgba(0, 0, 0, 0.22);
+}
+
+.card-red {
+  color: #b11c32;
+}
+
+.card-hidden {
+  background: linear-gradient(135deg, #103e35, #0a241f);
+  color: var(--gold);
+  align-items: center;
+  justify-content: center;
+}
+
+.card-hidden-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  border: 1px dashed rgba(240, 202, 112, 0.36);
+  display: grid;
+  place-items: center;
+  font-size: 1.6rem;
+}
+
+.dealer-strip,
+.dealer-hands-grid,
+.seat-list {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.dealer-hand-stack {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.seat-list {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.hand-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  min-width: 0;
+}
+
+.content-grid {
+  min-width: 0;
+}
+
+.player-layout > * {
+  min-width: 0;
+}
+
+.player-seats-layout > * {
+  min-width: 0;
+}
+
+.seat-row {
+  flex-wrap: wrap;
+}
+
+.error-banner {
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: rgba(255, 123, 123, 0.12);
+  color: #ffd7d7;
+  border: 1px solid rgba(255, 123, 123, 0.25);
+}
+
+.global-error {
+  margin-bottom: 1rem;
+}
+
+@keyframes win-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.88) translateY(16px);
+  }
+
+  12% {
+    opacity: 1;
+    transform: scale(1.04) translateY(0);
+  }
+
+  78% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(0.98) translateY(-18px);
+  }
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    padding: 1rem;
+  }
+
+  .hero,
+  .dealer-hand-panel,
+  .seat-row,
+  .panel-header,
+  .dealer-player-header,
+  .lobby-card-top,
+  .status-row,
+  .buyin-row,
+  .dealer-toolbar,
+  .toggle-row,
+  .inline-actions,
+  .actions-row,
+  .chip-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bet-builder {
+    flex-direction: column;
+  }
+
+  .two-column {
+    grid-template-columns: 1fr;
+  }
+
+  .player-layout,
+  .player-seats-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .card-row {
+    flex-wrap: nowrap;
+  }
+}
