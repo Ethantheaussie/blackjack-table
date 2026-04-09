@@ -412,18 +412,32 @@ function rebuildTurnOrder(lobby) {
 }
 
 function finishRoundIfNoActions(lobby) {
-  const hasActionableHands = getActiveParticipants(lobby).some((player) => getActionableHand(player));
+  const participants = getActiveParticipants(lobby);
+  const hasActionableHands = participants.some((player) => getActionableHand(player));
+  const allHandsBusted =
+    participants.length > 0 &&
+    participants.every((player) => player.hands.length > 0 && player.hands.every((hand) => hand.busted));
 
   if (!hasActionableHands) {
+    if (allHandsBusted) {
+      settleRound(lobby, {
+        revealDurationMs: 250,
+        message: "All players busted. Dealer wins automatically. You can reset the table now.",
+      });
+      return;
+    }
+
     lobby.round.activePlayerId = null;
     lobby.round.phase = "awaiting_dealer";
     lobby.round.message = "Dealer can reveal and settle the round.";
   }
 }
 
-function settleRound(lobby) {
+function settleRound(lobby, options = {}) {
   const settledAt = Date.now();
-  const revealDurationMs = Math.max(1000, lobby.dealerHand.length * 1000);
+  const revealDurationMs = Number.isFinite(options.revealDurationMs)
+    ? options.revealDurationMs
+    : Math.max(1000, lobby.dealerHand.length * 1000);
   const dealerValue = getHandValue(lobby.dealerHand).total;
   const dealerBlackjack = isBlackjack(lobby.dealerHand);
   const dealerBust = dealerValue > 21;
@@ -481,7 +495,8 @@ function settleRound(lobby) {
   lobby.round.phase = "settled";
   lobby.round.settledAt = settledAt;
   lobby.round.resetAvailableAt = settledAt + revealDurationMs;
-  lobby.round.message = "Revealing dealer cards. Reset unlocks after players finish the reveal.";
+  lobby.round.message =
+    options.message || "Revealing dealer cards. Reset unlocks after players finish the reveal.";
 }
 
 function dealInitialCards(lobby, participants) {
