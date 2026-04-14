@@ -8,6 +8,18 @@ function card(rank, suit = "spades") {
   };
 }
 
+export function makeResearchInitialPlayerCards(session, drawCard) {
+  const targetMax = Number(session.research?.targetMax || 0);
+  const bet = Number(session.pendingBet || 0);
+  const blackjackPayoutBankroll = Number((Number(session.bankroll || 0) + bet * 2.5).toFixed(2));
+
+  if (targetMax > 0 && blackjackPayoutBankroll > targetMax) {
+    return [card("10", "hearts"), card("8", "clubs")];
+  }
+
+  return [drawCard(session), drawCard(session)];
+}
+
 function bestLivePlayerTotal(hands = []) {
   const liveHands = hands.filter((hand) => !hand.busted);
 

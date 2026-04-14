@@ -12,7 +12,11 @@ import {
   shouldDealerHit,
 } from "./game.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
-import { chooseResearchOutcome, hasReachedResearchTarget } from "./researchModeEngine.js";
+import {
+  chooseResearchOutcome,
+  hasReachedResearchTarget,
+  makeResearchInitialPlayerCards,
+} from "./researchModeEngine.js";
 
 const PORT = Number(process.env.PORT || 4000);
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
@@ -968,7 +972,10 @@ function startSoloRound(session) {
   const bet = session.pendingBet;
   session.bankroll = Number((session.bankroll - bet).toFixed(2));
   session.currentBetTotal = bet;
-  session.hands = [makeHand([drawCard(session), drawCard(session)], bet)];
+  const playerCards = session.research?.enabled
+    ? makeResearchInitialPlayerCards(session, drawCard)
+    : [drawCard(session), drawCard(session)];
+  session.hands = [makeHand(playerCards, bet)];
   session.activeHandIndex = 0;
   session.lastResult = "";
   session.dealerHand.push(drawCard(session));

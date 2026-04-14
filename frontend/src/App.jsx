@@ -314,9 +314,9 @@ function ResearchEntry({ onEnter, error }) {
     <div className="auth-card research-card">
       <div>
         <p className="eyebrow">Transparent Simulator</p>
-        <h2>Enter RESEARCH MODE</h2>
+        <h2>Enter SOLO</h2>
         <p className="muted">
-          This is not fair blackjack. Outcomes may be controlled for testing and every session is clearly disclosed.
+          This is a solo blackjack experience.
         </p>
       </div>
 
@@ -324,7 +324,7 @@ function ResearchEntry({ onEnter, error }) {
         Display name
         <input
           value={name}
-          placeholder="ResearchPlayer"
+          placeholder="SoloPlayer"
           maxLength={20}
           onChange={(event) => setName(event.target.value)}
         />
@@ -1836,7 +1836,7 @@ export default function App() {
 
           <button className="menu-tile research-menu-tile" onClick={() => { setError(""); setMode(researchSession?.name ? "research" : "research-entry"); }}>
             <span className="tile-kicker">R</span>
-            <h2>RESEARCH MODE</h2>
+            <h2>SOLO</h2>
             <p>Transparent controlled SOLO simulator. Outcomes may be manipulated for testing.</p>
           </button>
         </main>

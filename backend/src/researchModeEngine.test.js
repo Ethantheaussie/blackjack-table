@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { chooseResearchOutcome, hasReachedResearchTarget } from "./researchModeEngine.js";
+import {
+  chooseResearchOutcome,
+  hasReachedResearchTarget,
+  makeResearchInitialPlayerCards,
+} from "./researchModeEngine.js";
 
 function hand(value, bet = 10) {
   const cards = value === 21
@@ -59,6 +63,17 @@ function hand(value, bet = 10) {
   };
   const result = chooseResearchOutcome(session);
   assert.equal(result.outcome, "player_win", "rebuy recovery flow should allow controlled player-positive outcome");
+}
+
+{
+  const session = {
+    bankroll: 30,
+    pendingBet: 10,
+    research: { targetMax: 54 },
+  };
+  const cards = makeResearchInitialPlayerCards(session, () => ({ rank: "A", suit: "spades" }));
+  assert.notEqual(cards.map((card) => card.rank).join(","), "A,A", "research cap protection should not use random draw here");
+  assert.equal(cards.some((card) => card.rank === "A"), false, "cap-protected research deal should not pull blackjack");
 }
 
 console.log("Research mode engine tests passed.");
