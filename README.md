@@ -1,6 +1,6 @@
 # Rigged Blackjack
 
-Local full-stack multiplayer Blackjack built with React, Vite, Express, and Socket.IO. It includes a dealer login, live lobby list, dealer-controlled bankroll approval flow, chip-based betting, multiplayer turn handling, split/double-down support, and synced game state across connected clients.
+Local full-stack Blackjack built with React, Vite, Express, and Socket.IO. It includes multiplayer dealer lobbies, a SOLO AI-dealer mode, dealer-controlled bankroll approval flows, chip-based betting, split/double-down support, and synced game state across connected clients.
 
 ## Stack
 
@@ -15,8 +15,10 @@ Local full-stack multiplayer Blackjack built with React, Vite, Express, and Sock
   - Username: `ethan`
   - Password: `2134asdf`
 - Player display-name flow with live open lobby browsing
+- SOLO mode for private AI-hosted blackjack hands
 - Multiple dealer-created lobbies
 - Dealer approvals for buy-ins and rebuys
+- Global dealer SOLO approval queue visible at the top of every dealer dashboard
 - Bankroll-based chip betting with fixed chips: `$5`, `$10`, `$20`, `$50`
 - Standard Blackjack flow with hit, stand, double down, split, blackjack, bust, and push
 - Dealer soft-17 rule toggle per lobby
@@ -85,6 +87,9 @@ npm run dev:frontend
 ## Gameplay Notes
 
 - Dealer cannot start a round without at least one approved player with a valid queued bet.
+- SOLO players cannot use requested chips until a human dealer approves the buy-in or rebuy.
+- SOLO buy-in/rebuy requests appear globally for all logged-in dealers and disappear once handled.
+- SOLO hands are dealt and resolved by the AI dealer; human dealers only approve or deny credits.
 - Players cannot act out of turn.
 - Duplicate player names are blocked inside a lobby.
 - Bets cannot exceed available bankroll.

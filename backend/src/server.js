@@ -34,6 +34,7 @@ app.use(express.json());
 
 const state = {
   lobbies: new Map(),
+  soloSessions: new Map(),
   dealerSockets: new Set(),
   pendingDisconnects: new Map(),
 };
@@ -80,6 +81,37 @@ function createLobbyRecord({ name, dealerHitsSoft17 = false }) {
   };
 }
 
+function createSoloSessionRecord({ sessionId, playerId, name, socketId }) {
+  return {
+    id: sessionId || crypto.randomUUID().slice(0, 8).toUpperCase(),
+    playerId,
+    name,
+    socketId,
+    connected: true,
+    bankroll: 0,
+    pendingBet: 0,
+    currentBetTotal: 0,
+    buyInRequest: null,
+    buyInStatus: "needs_buy_in",
+    hands: [],
+    activeHandIndex: 0,
+    lastResult: "",
+    deck: [],
+    dealerHand: [],
+    dealerHitsSoft17: false,
+    status: "waiting",
+    createdAt: new Date().toISOString(),
+    round: {
+      phase: "betting",
+      activePlayerId: null,
+      activeHandIndex: 0,
+      settledAt: null,
+      resetAvailableAt: null,
+      message: "SOLO table ready. Request chips or place a bet.",
+    },
+  };
+}
+
 function removePlayerFromOtherLobbies(playerId, nextLobbyId) {
   const affectedLobbyIds = [];
 
@@ -107,6 +139,16 @@ function getLobbyOrThrow(lobbyId) {
   }
 
   return lobby;
+}
+
+function getSoloSessionOrThrow(sessionId) {
+  const session = state.soloSessions.get(sessionId);
+
+  if (!session) {
+    throw new Error("SOLO session not found.");
+  }
+
+  return session;
 }
 
 function clearPendingDisconnect(playerId) {
@@ -187,6 +229,20 @@ function getActiveParticipants(lobby) {
 
 function getPlayerById(lobby, playerId) {
   return lobby.players.find((player) => player.id === playerId);
+}
+
+function getSoloRequests() {
+  return Array.from(state.soloSessions.values())
+    .filter((session) => session.buyInRequest)
+    .map((session) => ({
+      sessionId: session.id,
+      requestId: session.buyInRequest.id,
+      playerName: session.name,
+      requestType: session.bankroll > 0 ? "rebuy" : "initial buy-in",
+      amount: session.buyInRequest.amount,
+      bankroll: session.bankroll,
+      createdAt: session.buyInRequest.createdAt,
+    }));
 }
 
 function getCurrentHand(player) {
@@ -316,6 +372,49 @@ function getPlayerLobbyView(lobby, viewerId) {
   };
 }
 
+function serializeSoloSession(session) {
+  const finished = session.status === "finished";
+  const dealerCards =
+    finished || session.round.phase === "dealer_turn"
+      ? session.dealerHand.map((card) => formatCard(card))
+      : session.dealerHand.map((card, index) => (index === 0 ? formatCard(card) : formatCard(card, true)));
+  const dealerVisibleCards =
+    finished || session.round.phase === "dealer_turn"
+      ? session.dealerHand
+      : session.dealerHand.slice(0, 1);
+
+  return {
+    id: session.id,
+    name: "SOLO AI Table",
+    isSolo: true,
+    isOpen: true,
+    status: session.status,
+    debugMode: false,
+    dealerHitsSoft17: session.dealerHitsSoft17,
+    round: { ...session.round },
+    dealerHand: {
+      cards: dealerCards,
+      value: dealerVisibleCards.length ? getHandValue(dealerVisibleCards).total : 0,
+    },
+    player: {
+      id: session.playerId,
+      name: session.name,
+      connected: session.connected,
+      bankroll: session.bankroll,
+      pendingBet: session.pendingBet,
+      currentBetTotal: session.currentBetTotal,
+      buyInStatus: session.buyInStatus,
+      buyInRequest: session.buyInRequest,
+      lastResult: session.lastResult,
+      activeHandIndex: session.activeHandIndex,
+      hands: session.hands.map((hand) => ({
+        ...handSummary(hand),
+        cards: hand.cards.map((card) => formatCard(card)),
+      })),
+    },
+  };
+}
+
 function buildSnapshot() {
   return {
     lobbies: Array.from(state.lobbies.values()).map((lobby) => ({
@@ -325,6 +424,11 @@ function buildSnapshot() {
         socketId: null,
         connected: false,
       })),
+    })),
+    soloSessions: Array.from(state.soloSessions.values()).map((session) => ({
+      ...session,
+      socketId: null,
+      connected: false,
     })),
   };
 }
@@ -339,6 +443,7 @@ async function persistAndBroadcast(lobbyId) {
   );
 
   io.to("dealers").emit("dealer:dashboard", getDealerDashboard());
+  io.to("dealers").emit("dealer:soloRequests", getSoloRequests());
 
   if (lobbyId) {
     const lobby = state.lobbies.get(lobbyId);
@@ -360,6 +465,20 @@ async function persistAndBroadcast(lobbyId) {
           io.to(player.socketId).emit("lobby:update", getPlayerLobbyView(lobby, player.id));
         }
       }
+    }
+  }
+}
+
+async function persistAndBroadcastSolo(sessionId) {
+  await saveSnapshot(buildSnapshot());
+  io.to("dealers").emit("dealer:dashboard", getDealerDashboard());
+  io.to("dealers").emit("dealer:soloRequests", getSoloRequests());
+
+  if (sessionId) {
+    const session = state.soloSessions.get(sessionId);
+
+    if (session?.socketId) {
+      io.to(session.socketId).emit("solo:update", serializeSoloSession(session));
     }
   }
 }
@@ -633,6 +752,211 @@ function resolveDealer(lobby) {
   settleRound(lobby);
 }
 
+function settleSoloRound(session, options = {}) {
+  const settledAt = Date.now();
+  const revealDurationMs = Number.isFinite(options.revealDurationMs)
+    ? options.revealDurationMs
+    : Math.max(1000, session.dealerHand.length * 1000);
+  const dealerValue = getHandValue(session.dealerHand).total;
+  const dealerBlackjack = isBlackjack(session.dealerHand);
+  const dealerBust = dealerValue > 21;
+  const results = [];
+
+  for (const hand of session.hands) {
+    const playerValue = getHandValue(hand.cards).total;
+    let payout = 0;
+    let result = "lose";
+
+    if (hand.busted) {
+      result = "bust";
+    } else if (dealerBlackjack && hand.blackjack) {
+      result = "push";
+      payout = hand.bet;
+    } else if (hand.blackjack && !dealerBlackjack) {
+      result = "blackjack";
+      payout = hand.bet * 2.5;
+    } else if (dealerBlackjack) {
+      result = "dealer_blackjack";
+    } else if (dealerBust) {
+      result = "win";
+      payout = hand.bet * 2;
+    } else if (playerValue > dealerValue) {
+      result = "win";
+      payout = hand.bet * 2;
+    } else if (playerValue === dealerValue) {
+      result = "push";
+      payout = hand.bet;
+    }
+
+    hand.resolved = true;
+    hand.result = result;
+    session.bankroll = Number((session.bankroll + payout).toFixed(2));
+    results.push(`${result.toUpperCase()} (${playerValue})`);
+  }
+
+  session.currentBetTotal = 0;
+  session.pendingBet = 0;
+  session.lastResult = results.join(" / ");
+  session.status = "finished";
+  session.round.phase = "settled";
+  session.round.activePlayerId = null;
+  session.round.activeHandIndex = 0;
+  session.round.settledAt = settledAt;
+  session.round.resetAvailableAt = settledAt + revealDurationMs;
+  session.round.message = options.message || "AI dealer revealed. Reset when the reveal finishes.";
+}
+
+function resolveSoloDealer(session) {
+  session.round.phase = "dealer_turn";
+  session.round.activePlayerId = null;
+  session.round.message = "AI dealer is drawing cards.";
+
+  const allHandsBusted = session.hands.length > 0 && session.hands.every((hand) => hand.busted);
+
+  if (!allHandsBusted) {
+    while (shouldDealerHit(session.dealerHand, session.dealerHitsSoft17)) {
+      session.dealerHand.push(drawCard(session));
+    }
+  }
+
+  settleSoloRound(session, allHandsBusted
+    ? {
+        revealDurationMs: 250,
+        message: "You busted. AI dealer wins automatically. You can reset now.",
+      }
+    : {});
+}
+
+function setSoloTurn(session) {
+  const nextIndex = session.hands.findIndex(
+    (hand) => !hand.resolved && !hand.busted && !hand.stood && !hand.blackjack,
+  );
+
+  if (nextIndex >= 0) {
+    session.activeHandIndex = nextIndex;
+    session.round.activePlayerId = session.playerId;
+    session.round.activeHandIndex = nextIndex;
+    session.round.phase = "player_turns";
+    session.round.message = `${session.name} is acting on hand ${nextIndex + 1}.`;
+    return;
+  }
+
+  resolveSoloDealer(session);
+}
+
+function startSoloRound(session) {
+  if (session.status === "in_progress") {
+    throw new Error("A SOLO round is already in progress.");
+  }
+
+  if (session.pendingBet <= 0 || session.pendingBet > session.bankroll) {
+    throw new Error("Queue a valid SOLO bet first.");
+  }
+
+  session.deck = createDeck();
+  session.dealerHand = [];
+  resetPlayerRoundData(session);
+
+  const bet = session.pendingBet;
+  session.bankroll = Number((session.bankroll - bet).toFixed(2));
+  session.currentBetTotal = bet;
+  session.hands = [makeHand([drawCard(session), drawCard(session)], bet)];
+  session.activeHandIndex = 0;
+  session.lastResult = "";
+  session.dealerHand.push(drawCard(session));
+  session.dealerHand.push(drawCard(session));
+  session.status = "in_progress";
+  session.round.phase = "player_turns";
+  session.round.message = "AI dealer dealt the cards. Your move.";
+
+  if (isBlackjack(session.dealerHand) || session.hands.every((hand) => hand.blackjack)) {
+    settleSoloRound(session);
+    return;
+  }
+
+  setSoloTurn(session);
+}
+
+function applySoloAction(session, action) {
+  if (session.round.phase !== "player_turns" || session.round.activePlayerId !== session.playerId) {
+    throw new Error("It is not your SOLO turn.");
+  }
+
+  const hand = getCurrentHand(session);
+
+  if (!hand || hand.resolved || hand.busted || hand.stood || hand.blackjack) {
+    throw new Error("This SOLO hand cannot act.");
+  }
+
+  if (action === "hit") {
+    hand.cards.push(drawCard(session));
+    const value = getHandValue(hand.cards).total;
+
+    if (value > 21) {
+      hand.busted = true;
+      hand.resolved = true;
+      setSoloTurn(session);
+    } else if (value === 21) {
+      hand.stood = true;
+      hand.resolved = true;
+      setSoloTurn(session);
+    }
+  } else if (action === "stand") {
+    hand.stood = true;
+    hand.resolved = true;
+    setSoloTurn(session);
+  } else if (action === "double") {
+    if (hand.cards.length !== 2 || session.bankroll < hand.bet) {
+      throw new Error("Double down is not available for this SOLO hand.");
+    }
+
+    session.bankroll = Number((session.bankroll - hand.bet).toFixed(2));
+    hand.bet = Number((hand.bet * 2).toFixed(2));
+    session.currentBetTotal = Number((session.currentBetTotal + hand.bet / 2).toFixed(2));
+    hand.doubled = true;
+    hand.cards.push(drawCard(session));
+    hand.busted = getHandValue(hand.cards).total > 21;
+    hand.stood = !hand.busted;
+    hand.resolved = true;
+    setSoloTurn(session);
+  } else if (action === "split") {
+    if (!canSplitCards(hand.cards) || session.bankroll < hand.bet) {
+      throw new Error("Split is not available for this SOLO hand.");
+    }
+
+    session.bankroll = Number((session.bankroll - hand.bet).toFixed(2));
+    session.currentBetTotal = Number((session.currentBetTotal + hand.bet).toFixed(2));
+
+    const [firstCard, secondCard] = hand.cards;
+    const firstHand = makeHand([firstCard, drawCard(session)], hand.bet, { fromSplit: true });
+    const secondHand = makeHand([secondCard, drawCard(session)], hand.bet, { fromSplit: true });
+
+    session.hands.splice(session.activeHandIndex, 1, firstHand, secondHand);
+    setSoloTurn(session);
+  } else {
+    throw new Error("Unknown SOLO action.");
+  }
+}
+
+function resetSoloRound(session) {
+  session.status = "waiting";
+  session.dealerHand = [];
+  session.deck = [];
+  session.hands = [];
+  session.activeHandIndex = 0;
+  session.currentBetTotal = 0;
+  session.pendingBet = 0;
+  session.lastResult = "";
+  session.round = {
+    phase: "betting",
+    activePlayerId: null,
+    activeHandIndex: 0,
+    settledAt: null,
+    resetAvailableAt: null,
+    message: "SOLO table ready. Place your next bet.",
+  };
+}
+
 function drawSpecificRank(lobby, rank) {
   const deckIndex = lobby.deck.findIndex((card) => card.rank === rank);
 
@@ -866,6 +1190,32 @@ function hydrateSnapshot(snapshot) {
 
     state.lobbies.set(lobby.id, lobby);
   }
+
+  for (const sessionData of snapshot.soloSessions || []) {
+    const session = {
+      ...sessionData,
+      socketId: null,
+      connected: false,
+      deck: [],
+      dealerHand: [],
+      hands: [],
+      activeHandIndex: 0,
+      currentBetTotal: 0,
+      pendingBet: 0,
+      lastResult: "",
+      status: "waiting",
+      round: {
+        phase: "betting",
+        activePlayerId: null,
+        activeHandIndex: 0,
+        settledAt: null,
+        resetAvailableAt: null,
+        message: "SOLO table ready. Request chips or place a bet.",
+      },
+    };
+
+    state.soloSessions.set(session.id, session);
+  }
 }
 
 app.get("/api/health", (_request, response) => {
@@ -904,6 +1254,7 @@ io.on("connection", (socket) => {
       state.dealerSockets.add(socket.id);
       socket.join("dealers");
       socket.emit("dealer:dashboard", getDealerDashboard());
+      socket.emit("dealer:soloRequests", getSoloRequests());
       callback({ ok: true });
     } catch (error) {
       callback({ ok: false, message: error.message });
@@ -978,6 +1329,33 @@ io.on("connection", (socket) => {
       player.buyInRequest = null;
       clampPendingBet(player);
       await persistAndBroadcast(lobby.id);
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, message: error.message });
+    }
+  });
+
+  socket.on("dealer:respondSoloBuyIn", async (payload, callback = () => {}) => {
+    try {
+      ensureDealer(payload?.token);
+      const session = getSoloSessionOrThrow(payload?.sessionId);
+
+      if (!session.buyInRequest || session.buyInRequest.id !== payload?.requestId) {
+        throw new Error("This SOLO request has already been handled.");
+      }
+
+      if (Boolean(payload?.approved)) {
+        session.bankroll = Number((session.bankroll + session.buyInRequest.amount).toFixed(2));
+        session.buyInStatus = "approved";
+        session.round.message = `SOLO buy-in approved. ${session.name} can play.`;
+      } else {
+        session.buyInStatus = "denied";
+        session.round.message = "SOLO buy-in denied. Submit a new request if needed.";
+      }
+
+      session.buyInRequest = null;
+      clampPendingBet(session);
+      await persistAndBroadcastSolo(session.id);
       callback({ ok: true });
     } catch (error) {
       callback({ ok: false, message: error.message });
@@ -1258,10 +1636,182 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("solo:join", async (payload, callback = () => {}) => {
+    try {
+      const name = String(payload?.name || "").trim();
+      const playerId = String(payload?.playerId || crypto.randomUUID());
+
+      if (!name) {
+        throw new Error("Display name is required for SOLO.");
+      }
+
+      let session = payload?.sessionId ? state.soloSessions.get(payload.sessionId) : null;
+
+      if (!session) {
+        session = createSoloSessionRecord({
+          sessionId: payload?.sessionId,
+          playerId,
+          name,
+          socketId: socket.id,
+        });
+        state.soloSessions.set(session.id, session);
+      } else if (session.playerId !== playerId) {
+        throw new Error("That SOLO session belongs to another player.");
+      } else {
+        session.name = name;
+        session.socketId = socket.id;
+        session.connected = true;
+      }
+
+      socket.data.soloSessionId = session.id;
+      socket.data.soloPlayerId = session.playerId;
+      socket.join(`solo:${session.id}`);
+      await persistAndBroadcastSolo(session.id);
+      callback({ ok: true, sessionId: session.id, playerId: session.playerId });
+    } catch (error) {
+      callback({ ok: false, message: error.message });
+    }
+  });
+
+  socket.on("solo:requestBuyIn", async (payload, callback = () => {}) => {
+    try {
+      const session = getSoloSessionOrThrow(payload?.sessionId);
+
+      if (session.playerId !== payload?.playerId) {
+        throw new Error("SOLO player mismatch.");
+      }
+
+      if (session.buyInRequest) {
+        throw new Error("A SOLO buy-in request is already pending.");
+      }
+
+      session.buyInRequest = {
+        id: crypto.randomUUID(),
+        amount: normalizeAmount(payload?.amount),
+        createdAt: new Date().toISOString(),
+      };
+      session.buyInStatus = "pending";
+      session.round.message = "SOLO buy-in request sent. Waiting for dealer approval.";
+      await persistAndBroadcastSolo(session.id);
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, message: error.message });
+    }
+  });
+
+  socket.on("solo:addChip", async (payload, callback = () => {}) => {
+    try {
+      const session = getSoloSessionOrThrow(payload?.sessionId);
+
+      if (session.playerId !== payload?.playerId) {
+        throw new Error("SOLO player mismatch.");
+      }
+
+      if (session.status === "in_progress") {
+        throw new Error("You cannot change SOLO bets during an active round.");
+      }
+
+      const chip = normalizeAmount(payload?.amount);
+      const nextBet = Number((session.pendingBet + chip).toFixed(2));
+
+      if (nextBet > session.bankroll) {
+        throw new Error("Not enough bankroll for that SOLO chip.");
+      }
+
+      session.pendingBet = nextBet;
+      await persistAndBroadcastSolo(session.id);
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, message: error.message });
+    }
+  });
+
+  socket.on("solo:clearBet", async (payload, callback = () => {}) => {
+    try {
+      const session = getSoloSessionOrThrow(payload?.sessionId);
+
+      if (session.playerId !== payload?.playerId) {
+        throw new Error("SOLO player mismatch.");
+      }
+
+      if (session.status === "in_progress") {
+        throw new Error("You cannot clear SOLO bets during an active round.");
+      }
+
+      session.pendingBet = 0;
+      await persistAndBroadcastSolo(session.id);
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, message: error.message });
+    }
+  });
+
+  socket.on("solo:startRound", async (payload, callback = () => {}) => {
+    try {
+      const session = getSoloSessionOrThrow(payload?.sessionId);
+
+      if (session.playerId !== payload?.playerId) {
+        throw new Error("SOLO player mismatch.");
+      }
+
+      startSoloRound(session);
+      await persistAndBroadcastSolo(session.id);
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, message: error.message });
+    }
+  });
+
+  socket.on("solo:action", async (payload, callback = () => {}) => {
+    try {
+      const session = getSoloSessionOrThrow(payload?.sessionId);
+
+      if (session.playerId !== payload?.playerId) {
+        throw new Error("SOLO player mismatch.");
+      }
+
+      applySoloAction(session, payload?.action);
+      await persistAndBroadcastSolo(session.id);
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, message: error.message });
+    }
+  });
+
+  socket.on("solo:resetRound", async (payload, callback = () => {}) => {
+    try {
+      const session = getSoloSessionOrThrow(payload?.sessionId);
+
+      if (session.playerId !== payload?.playerId) {
+        throw new Error("SOLO player mismatch.");
+      }
+
+      if (session.status === "finished" && session.round.resetAvailableAt && Date.now() < session.round.resetAvailableAt) {
+        throw new Error("Wait for the AI dealer reveal to finish before resetting.");
+      }
+
+      resetSoloRound(session);
+      await persistAndBroadcastSolo(session.id);
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, message: error.message });
+    }
+  });
+
   socket.on("disconnect", async () => {
     state.dealerSockets.delete(socket.id);
 
     const { lobbyId, playerId } = socket.data;
+
+    if (socket.data.soloSessionId) {
+      const session = state.soloSessions.get(socket.data.soloSessionId);
+
+      if (session && session.socketId === socket.id) {
+        session.connected = false;
+        session.socketId = null;
+        await persistAndBroadcastSolo(session.id);
+      }
+    }
 
     if (!lobbyId || !playerId) {
       return;

@@ -140,7 +140,8 @@ input {
 .content-grid,
 .bankroll-grid,
 .hand-grid,
-.lobby-grid {
+.lobby-grid,
+.solo-request-list {
   display: grid;
   gap: 1rem;
 }
@@ -162,9 +163,14 @@ input {
   grid-template-columns: 1fr;
 }
 
+.dashboard-full {
+  grid-column: 1 / -1;
+}
+
 .menu-tile,
 .auth-card,
-.panel {
+.panel,
+.solo-request-bar {
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(9, 34, 30, 0.9), rgba(5, 23, 20, 0.92));
   border-radius: 28px;
@@ -208,6 +214,13 @@ input {
   padding: 1.25rem;
   min-width: 0;
   overflow: hidden;
+}
+
+.solo-request-bar {
+  position: sticky;
+  top: 1rem;
+  z-index: 20;
+  padding: 1rem;
 }
 
 .panel-header,
@@ -332,6 +345,7 @@ input {
 .lobby-card,
 .dealer-player-card,
 .hand-card,
+.solo-request-card,
 .empty-state,
 .lobby-selector,
 .info-banner,
@@ -379,8 +393,29 @@ input {
 .lobby-card,
 .dealer-player-card,
 .hand-card,
+.solo-request-card,
 .lobby-selector {
   padding: 1rem;
+}
+
+.solo-request-list {
+  margin-top: 0.75rem;
+}
+
+.solo-request-card {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.solo-request-card p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+}
+
+.solo-start-row {
+  margin-top: 1rem;
 }
 
 .lobby-selector {
@@ -569,7 +604,8 @@ input {
   .toggle-row,
   .inline-actions,
   .actions-row,
-  .chip-row {
+  .chip-row,
+  .solo-request-card {
     flex-direction: column;
     align-items: stretch;
   }

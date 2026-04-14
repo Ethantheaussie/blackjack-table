@@ -3,6 +3,7 @@ import { io } from "socket.io-client";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 const PLAYER_STORAGE_KEY = "blackjack-table-player";
+const SOLO_STORAGE_KEY = "blackjack-table-solo-player";
 const DEALER_STORAGE_KEY = "blackjack-table-dealer";
 const CHIP_VALUES = [5, 10, 20, 50];
 
@@ -681,12 +682,149 @@ function PlayerLobbyView({ lobby, playerId, onRequestBuyIn, onAddChip, onClearBe
   );
 }
 
+function SoloTableView({
+  solo,
+  onRequestBuyIn,
+  onAddChip,
+  onClearBet,
+  onAllIn,
+  onStartRound,
+  onAction,
+  onResetRound,
+  onLeave,
+}) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (solo?.status !== "finished" || !solo?.round?.resetAvailableAt) {
+      setNow(Date.now());
+      return undefined;
+    }
+
+    const interval = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(interval);
+  }, [solo?.status, solo?.round?.resetAvailableAt]);
+
+  if (!solo?.player) {
+    return <SectionCard title="SOLO Loading" subtitle="Connecting to your AI-hosted table." />;
+  }
+
+  const player = solo.player;
+  const revealComplete =
+    solo.status !== "finished" || !solo.round?.resetAvailableAt
+      ? true
+      : now >= Number(solo.round.resetAvailableAt);
+  const resetCountdownMs = Math.max(0, Number(solo.round?.resetAvailableAt || 0) - now);
+  const canReset = solo.status === "finished" && resetCountdownMs <= 0;
+  const bettingLocked = solo.status !== "waiting";
+  const canStart = solo.status === "waiting" && player.pendingBet > 0 && player.pendingBet <= player.bankroll;
+  const tableView = {
+    ...solo,
+    players: [player],
+    round: {
+      ...solo.round,
+      activePlayerId: solo.round.activePlayerId,
+    },
+  };
+
+  return (
+    <div className="stack gap-md">
+      <SectionCard
+        title="SOLO Blackjack"
+        subtitle={`AI-hosted private table - Session #${solo.id}`}
+        actions={
+          <button className="ghost-button" onClick={onLeave}>
+            Exit SOLO
+          </button>
+        }
+      >
+        <div className="info-banner">
+          AI handles the cards and gameplay. Human dealers still approve buy-ins and rebuys.
+        </div>
+        <div className="status-row">
+          <StatusPill tone={solo.status === "waiting" ? "success" : solo.status === "finished" ? "neutral" : "warning"}>
+            {solo.status}
+          </StatusPill>
+          <span className="muted">{solo.round.message}</span>
+        </div>
+      </SectionCard>
+
+      <div className="content-grid player-layout">
+        <SectionCard title="SOLO Bankroll" subtitle="Request dealer-approved credits, then queue your AI-table bet.">
+          <BuyInPanel
+            player={player}
+            onRequestBuyIn={onRequestBuyIn}
+            onAddChip={onAddChip}
+            onClearBet={onClearBet}
+            onAllIn={onAllIn}
+            disabled={bettingLocked}
+          />
+          <div className="actions-row solo-start-row">
+            <button className="primary-button" disabled={!canStart} onClick={onStartRound}>
+              Start SOLO hand
+            </button>
+            <button className="ghost-button" disabled={!canReset} onClick={onResetRound}>
+              {canReset ? "Reset SOLO hand" : `Reset in ${Math.ceil(resetCountdownMs / 1000)}s`}
+            </button>
+          </div>
+        </SectionCard>
+
+        <PlayerTable lobby={tableView} player={player} onAction={onAction} revealComplete={revealComplete} />
+      </div>
+    </div>
+  );
+}
+
+function SoloRequestBar({ requests, onRespond }) {
+  if (!requests.length) {
+    return null;
+  }
+
+  return (
+    <section className="solo-request-bar">
+      <div>
+        <p className="eyebrow">SOLO Buy-In Queue</p>
+        <h3>{requests.length} pending SOLO request{requests.length === 1 ? "" : "s"}</h3>
+      </div>
+      <div className="solo-request-list">
+        {requests.map((request) => (
+          <div key={request.requestId} className="solo-request-card">
+            <div>
+              <strong>{request.playerName}</strong>
+              <p>
+                {request.requestType} - {currency(request.amount)} - bankroll {currency(request.bankroll)}
+              </p>
+              <p className="muted">SOLO #{request.sessionId}</p>
+            </div>
+            <div className="inline-actions">
+              <button
+                className="secondary-button"
+                onClick={() => onRespond(request.sessionId, request.requestId, true)}
+              >
+                Accept
+              </button>
+              <button
+                className="ghost-button"
+                onClick={() => onRespond(request.sessionId, request.requestId, false)}
+              >
+                Deny
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function DealerDashboard({
   lobbies,
+  soloRequests,
   onCreateLobby,
   onToggleLobby,
   onToggleDebugMode,
   onRespondBuyIn,
+  onRespondSoloBuyIn,
   onStartRound,
   onResolveRound,
   onForceDealerWin,
@@ -722,6 +860,10 @@ function DealerDashboard({
 
   return (
     <div className="content-grid two-column">
+      <div className="dashboard-full">
+        <SoloRequestBar requests={soloRequests} onRespond={onRespondSoloBuyIn} />
+      </div>
+
       <div className="stack gap-md">
         <SectionCard title="Create Lobby" subtitle="Spin up as many tables as you want for local testing.">
           <div className="stack gap-sm">
@@ -975,31 +1117,44 @@ export default function App() {
     const raw = localStorage.getItem(PLAYER_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   });
+  const [soloSession, setSoloSession] = useState(() => {
+    const raw = localStorage.getItem(SOLO_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  });
   const [publicLobbies, setPublicLobbies] = useState([]);
   const [dealerLobbies, setDealerLobbies] = useState([]);
+  const [soloRequests, setSoloRequests] = useState([]);
   const [playerLobby, setPlayerLobby] = useState(null);
+  const [soloView, setSoloView] = useState(null);
   const lastSyncedPlayerLobbyRef = useRef("");
+  const lastSyncedSoloRef = useRef("");
   const lastSyncedDealerSocketIdRef = useRef("");
 
   useEffect(() => {
     socket.on("public:lobbies", setPublicLobbies);
     socket.on("dealer:dashboard", setDealerLobbies);
+    socket.on("dealer:soloRequests", setSoloRequests);
     socket.on("lobby:update", setPlayerLobby);
+    socket.on("solo:update", setSoloView);
 
     return () => {
       socket.off("public:lobbies", setPublicLobbies);
       socket.off("dealer:dashboard", setDealerLobbies);
+      socket.off("dealer:soloRequests", setSoloRequests);
       socket.off("lobby:update", setPlayerLobby);
+      socket.off("solo:update", setSoloView);
     };
   }, []);
 
   useEffect(() => {
     if (dealerSession?.token) {
       setMode("dealer");
+    } else if (soloSession?.name) {
+      setMode("solo");
     } else if (playerSession?.name) {
       setMode("player");
     }
-  }, [dealerSession, playerSession]);
+  }, [dealerSession, playerSession, soloSession]);
 
   useEffect(() => {
     async function syncCurrentSession() {
@@ -1019,6 +1174,32 @@ export default function App() {
         }
 
         lastSyncedDealerSocketIdRef.current = socket.id;
+        return;
+      }
+
+      if (mode === "solo" && soloSession?.name) {
+        const syncKey = `${socket.id}:${soloSession.sessionId || "new"}:${soloSession.playerId}`;
+
+        if (lastSyncedSoloRef.current === syncKey) {
+          return;
+        }
+
+        const response = await emitAsync("solo:join", {
+          sessionId: soloSession.sessionId,
+          playerId: soloSession.playerId,
+          name: soloSession.name,
+        });
+
+        if (!response.ok) {
+          setError(response.message);
+          return;
+        }
+
+        const session = { ...soloSession, sessionId: response.sessionId, playerId: response.playerId };
+        setSoloSession(session);
+        localStorage.setItem(SOLO_STORAGE_KEY, JSON.stringify(session));
+        lastSyncedSoloRef.current = `${socket.id}:${response.sessionId}:${response.playerId}`;
+        setError("");
         return;
       }
 
@@ -1052,7 +1233,7 @@ export default function App() {
     return () => {
       socket.off("connect", syncCurrentSession);
     };
-  }, [dealerSession, mode, playerSession]);
+  }, [dealerSession, mode, playerSession, soloSession]);
 
   async function handleDealerLogin(credentials) {
     setBusy(true);
@@ -1099,6 +1280,40 @@ export default function App() {
     setPlayerSession(session);
     localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(session));
     setMode("player");
+  }
+
+  async function handleSoloEnter(name) {
+    const trimmed = String(name || "").trim();
+
+    if (!trimmed) {
+      setError("Please enter a display name for SOLO.");
+      return;
+    }
+
+    const startingSession = {
+      name: trimmed,
+      playerId: soloSession?.playerId || crypto.randomUUID(),
+      sessionId: soloSession?.sessionId || null,
+    };
+
+    const response = await emitAsync("solo:join", startingSession);
+
+    if (!response.ok) {
+      setError(response.message);
+      return;
+    }
+
+    const session = {
+      ...startingSession,
+      playerId: response.playerId,
+      sessionId: response.sessionId,
+    };
+
+    setError("");
+    setSoloSession(session);
+    localStorage.setItem(SOLO_STORAGE_KEY, JSON.stringify(session));
+    lastSyncedSoloRef.current = `${socket.id || ""}:${response.sessionId}:${response.playerId}`;
+    setMode("solo");
   }
 
   async function joinLobby(lobbyId) {
@@ -1198,6 +1413,71 @@ export default function App() {
     setError(response.ok ? "" : response.message);
   }
 
+  async function soloRequestBuyIn(amount) {
+    const response = await emitAsync("solo:requestBuyIn", {
+      sessionId: soloSession.sessionId,
+      playerId: soloSession.playerId,
+      amount,
+    });
+
+    setError(response.ok ? "" : response.message);
+  }
+
+  async function soloAddChip(amount) {
+    const response = await emitAsync("solo:addChip", {
+      sessionId: soloSession.sessionId,
+      playerId: soloSession.playerId,
+      amount,
+    });
+
+    setError(response.ok ? "" : response.message);
+  }
+
+  async function soloClearBet() {
+    const response = await emitAsync("solo:clearBet", {
+      sessionId: soloSession.sessionId,
+      playerId: soloSession.playerId,
+    });
+
+    setError(response.ok ? "" : response.message);
+  }
+
+  async function soloStartRound() {
+    const response = await emitAsync("solo:startRound", {
+      sessionId: soloSession.sessionId,
+      playerId: soloSession.playerId,
+    });
+
+    setError(response.ok ? "" : response.message);
+  }
+
+  async function soloAction(action) {
+    const response = await emitAsync("solo:action", {
+      sessionId: soloSession.sessionId,
+      playerId: soloSession.playerId,
+      action,
+    });
+
+    setError(response.ok ? "" : response.message);
+  }
+
+  async function soloResetRound() {
+    const response = await emitAsync("solo:resetRound", {
+      sessionId: soloSession.sessionId,
+      playerId: soloSession.playerId,
+    });
+
+    setError(response.ok ? "" : response.message);
+  }
+
+  function resetSolo() {
+    localStorage.removeItem(SOLO_STORAGE_KEY);
+    lastSyncedSoloRef.current = "";
+    setSoloSession(null);
+    setSoloView(null);
+    setMode("menu");
+  }
+
   async function dealerAction(event, payload) {
     const response = await emitAsync(event, {
       token: dealerSession?.token,
@@ -1246,6 +1526,10 @@ export default function App() {
             <button className="ghost-button" onClick={resetPlayer}>
               Reset player session
             </button>
+          ) : mode === "solo" ? (
+            <button className="ghost-button" onClick={resetSolo}>
+              Exit SOLO
+            </button>
           ) : null}
         </div>
       </header>
@@ -1265,6 +1549,12 @@ export default function App() {
             <h2>Play as Player</h2>
             <p>Join an open table, request chips, place bets, and act when your turn arrives.</p>
           </button>
+
+          <button className="menu-tile" onClick={() => { setError(""); setMode(soloSession?.name ? "solo" : "solo-entry"); }}>
+            <span className="tile-kicker">3</span>
+            <h2>SOLO</h2>
+            <p>Play privately against an AI dealer while human dealers approve your credits.</p>
+          </button>
         </main>
       ) : null}
 
@@ -1272,13 +1562,17 @@ export default function App() {
 
       {mode === "player-entry" ? <PlayerEntry onEnter={handlePlayerEnter} error={error} /> : null}
 
+      {mode === "solo-entry" ? <PlayerEntry onEnter={handleSoloEnter} error={error} /> : null}
+
       {mode === "dealer" ? (
         <DealerDashboard
           lobbies={dealerLobbies}
+          soloRequests={soloRequests}
           onCreateLobby={(name, hitsSoft17) => dealerAction("dealer:createLobby", { name, dealerHitsSoft17: hitsSoft17 })}
           onToggleLobby={(lobbyId, isOpen) => dealerAction("dealer:toggleLobby", { lobbyId, isOpen })}
           onToggleDebugMode={(lobbyId, debugMode) => dealerAction("dealer:toggleDebugMode", { lobbyId, debugMode })}
           onRespondBuyIn={(lobbyId, playerId, approved) => dealerAction("dealer:respondBuyIn", { lobbyId, playerId, approved })}
+          onRespondSoloBuyIn={(sessionId, requestId, approved) => dealerAction("dealer:respondSoloBuyIn", { sessionId, requestId, approved })}
           onStartRound={(lobbyId) => dealerAction("dealer:startRound", { lobbyId })}
           onResolveRound={(lobbyId) => dealerAction("dealer:resolveRound", { lobbyId })}
           onForceDealerWin={(lobbyId) => dealerAction("dealer:forceDealerWin", { lobbyId })}
@@ -1305,6 +1599,20 @@ export default function App() {
             <SectionCard title="Waiting for a Lobby" subtitle="Join any open lobby to enter the table room." />
           )}
         </div>
+      ) : null}
+
+      {mode === "solo" ? (
+        <SoloTableView
+          solo={soloView}
+          onRequestBuyIn={soloRequestBuyIn}
+          onAddChip={soloAddChip}
+          onClearBet={soloClearBet}
+          onAllIn={soloAddChip}
+          onStartRound={soloStartRound}
+          onAction={soloAction}
+          onResetRound={soloResetRound}
+          onLeave={resetSolo}
+        />
       ) : null}
     </div>
   );
