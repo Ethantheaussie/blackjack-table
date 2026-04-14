@@ -694,6 +694,15 @@ function SoloTableView({
   onLeave,
 }) {
   const [now, setNow] = useState(Date.now());
+  const previousStatusRef = useRef(solo?.status || "waiting");
+  const displayedBankrollRef = useRef(solo?.player?.bankroll || 0);
+  const onResetRoundRef = useRef(onResetRound);
+  const [winFlashAmount, setWinFlashAmount] = useState(0);
+  const [displayedBankroll, setDisplayedBankroll] = useState(Number(solo?.player?.bankroll || 0));
+
+  useEffect(() => {
+    onResetRoundRef.current = onResetRound;
+  }, [onResetRound]);
 
   useEffect(() => {
     if (solo?.status !== "finished" || !solo?.round?.resetAvailableAt) {
@@ -705,11 +714,52 @@ function SoloTableView({
     return () => clearInterval(interval);
   }, [solo?.status, solo?.round?.resetAvailableAt]);
 
+  useEffect(() => {
+    if (!solo?.player) {
+      return undefined;
+    }
+
+    const previousStatus = previousStatusRef.current;
+    const currentBankroll = Number(solo.player.bankroll || 0);
+    const currentDisplayed = Number(displayedBankrollRef.current || 0);
+    const delta = Number((currentBankroll - currentDisplayed).toFixed(2));
+    const hasWinningHand = (solo.player.hands || []).some((hand) => ["win", "blackjack"].includes(hand.result));
+
+    if (solo.status !== "finished") {
+      setDisplayedBankroll(currentBankroll);
+      displayedBankrollRef.current = currentBankroll;
+    }
+
+    if (solo.status === "finished" && previousStatus !== "finished") {
+      const revealDelay = Math.max(0, Number(solo.round?.resetAvailableAt || 0) - Date.now());
+      const winTimeout = setTimeout(() => {
+        setDisplayedBankroll(currentBankroll);
+        displayedBankrollRef.current = currentBankroll;
+
+        if (hasWinningHand && delta > 0) {
+          setWinFlashAmount(delta);
+        }
+      }, revealDelay);
+      const hideTimeout = setTimeout(() => setWinFlashAmount(0), revealDelay + 3000);
+      const resetTimeout = setTimeout(() => onResetRoundRef.current(), revealDelay + 3000);
+      previousStatusRef.current = solo.status;
+
+      return () => {
+        clearTimeout(winTimeout);
+        clearTimeout(hideTimeout);
+        clearTimeout(resetTimeout);
+      };
+    }
+
+    previousStatusRef.current = solo.status;
+    return undefined;
+  }, [solo?.status, solo?.round?.resetAvailableAt, solo?.player]);
+
   if (!solo?.player) {
     return <SectionCard title="SOLO Loading" subtitle="Connecting to your AI-hosted table." />;
   }
 
-  const player = solo.player;
+  const player = { ...solo.player, bankroll: displayedBankroll };
   const revealComplete =
     solo.status !== "finished" || !solo.round?.resetAvailableAt
       ? true
@@ -729,6 +779,12 @@ function SoloTableView({
 
   return (
     <div className="stack gap-md">
+      {winFlashAmount > 0 ? (
+        <div className="win-overlay">
+          <div className="win-overlay-text">WIN {currency(winFlashAmount)}</div>
+        </div>
+      ) : null}
+
       <SectionCard
         title="SOLO Blackjack"
         subtitle={`AI-hosted private table - Session #${solo.id}`}
