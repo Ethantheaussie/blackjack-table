@@ -764,8 +764,6 @@ function SoloTableView({
     solo.status !== "finished" || !solo.round?.resetAvailableAt
       ? true
       : now >= Number(solo.round.resetAvailableAt);
-  const resetCountdownMs = Math.max(0, Number(solo.round?.resetAvailableAt || 0) - now);
-  const canReset = solo.status === "finished" && resetCountdownMs <= 0;
   const bettingLocked = solo.status !== "waiting";
   const canStart = solo.status === "waiting" && player.pendingBet > 0 && player.pendingBet <= player.bankroll;
   const tableView = {
@@ -818,9 +816,6 @@ function SoloTableView({
           <div className="actions-row solo-start-row">
             <button className="primary-button" disabled={!canStart} onClick={onStartRound}>
               Start SOLO hand
-            </button>
-            <button className="ghost-button" disabled={!canReset} onClick={onResetRound}>
-              {canReset ? "Reset SOLO hand" : `Reset in ${Math.ceil(resetCountdownMs / 1000)}s`}
             </button>
           </div>
         </SectionCard>
