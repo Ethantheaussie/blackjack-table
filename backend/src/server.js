@@ -12,6 +12,7 @@ import {
   shouldDealerHit,
 } from "./game.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
+import { chooseResearchOutcome, hasReachedResearchTarget } from "./researchModeEngine.js";
 
 const PORT = Number(process.env.PORT || 4000);
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
@@ -81,7 +82,7 @@ function createLobbyRecord({ name, dealerHitsSoft17 = false }) {
   };
 }
 
-function createSoloSessionRecord({ sessionId, playerId, name, socketId }) {
+function createSoloSessionRecord({ sessionId, playerId, name, socketId, researchMode = false }) {
   return {
     id: sessionId || crypto.randomUUID().slice(0, 8).toUpperCase(),
     playerId,
@@ -108,6 +109,18 @@ function createSoloSessionRecord({ sessionId, playerId, name, socketId }) {
       settledAt: null,
       resetAvailableAt: null,
       message: "SOLO table ready. Request chips or place a bet.",
+    },
+    research: {
+      enabled: Boolean(researchMode),
+      targetMax: null,
+      targetMin: null,
+      approvedBankroll: 0,
+      paused: false,
+      ended: false,
+      note: "",
+      alert: "",
+      log: [],
+      audit: [],
     },
   };
 }
@@ -232,17 +245,58 @@ function getPlayerById(lobby, playerId) {
 }
 
 function getSoloRequests() {
-  return Array.from(state.soloSessions.values())
+  const requests = Array.from(state.soloSessions.values())
     .filter((session) => session.buyInRequest)
     .map((session) => ({
+      kind: "buy_in",
+      researchMode: Boolean(session.research?.enabled),
       sessionId: session.id,
       requestId: session.buyInRequest.id,
       playerName: session.name,
       requestType: session.bankroll > 0 ? "rebuy" : "initial buy-in",
       amount: session.buyInRequest.amount,
       bankroll: session.bankroll,
+      targetMax: session.research?.targetMax,
+      targetMin: session.research?.targetMin,
+      note: session.research?.note || "",
       createdAt: session.buyInRequest.createdAt,
     }));
+
+  const alerts = Array.from(state.soloSessions.values())
+    .filter((session) => session.research?.enabled && session.research?.alert)
+    .map((session) => ({
+      kind: "research_alert",
+      researchMode: true,
+      sessionId: session.id,
+      requestId: `alert-${session.id}`,
+      playerName: session.name,
+      requestType: session.research.alert,
+      amount: 0,
+      bankroll: session.bankroll,
+      targetMax: session.research.targetMax,
+      targetMin: session.research.targetMin,
+      note: session.research.note || "",
+      createdAt: new Date().toISOString(),
+    }));
+
+  return [...requests, ...alerts];
+}
+
+function addResearchAudit(session, event, details = {}) {
+  if (!session.research?.enabled) {
+    return;
+  }
+
+  const entry = {
+    id: crypto.randomUUID(),
+    at: new Date().toISOString(),
+    event,
+    ...details,
+  };
+
+  session.research.audit.push(entry);
+  session.research.log.push(entry);
+  session.research.log = session.research.log.slice(-20);
 }
 
 function getCurrentHand(player) {
@@ -412,6 +466,19 @@ function serializeSoloSession(session) {
         cards: hand.cards.map((card) => formatCard(card)),
       })),
     },
+    research: session.research
+      ? {
+          enabled: Boolean(session.research.enabled),
+          targetMax: session.research.targetMax,
+          targetMin: session.research.targetMin,
+          approvedBankroll: session.research.approvedBankroll,
+          paused: session.research.paused,
+          ended: session.research.ended,
+          note: session.research.note,
+          alert: session.research.alert,
+          log: session.research.log,
+        }
+      : null,
   };
 }
 
@@ -804,6 +871,26 @@ function settleSoloRound(session, options = {}) {
   session.round.settledAt = settledAt;
   session.round.resetAvailableAt = settledAt + revealDurationMs;
   session.round.message = options.message || "AI dealer revealed. Reset when the reveal finishes.";
+
+  if (session.research?.enabled) {
+    addResearchAudit(session, "controlled_round_result", {
+      bankroll: session.bankroll,
+      targetMax: session.research.targetMax,
+      targetMin: session.research.targetMin,
+      result: session.lastResult,
+      controllerReason: options.controllerReason || "Normal SOLO resolution.",
+    });
+
+    if (hasReachedResearchTarget(session)) {
+      session.research.paused = true;
+      session.research.alert = "target reached";
+      session.round.message = "Wait for dealer input. You have reached the current research target.";
+      addResearchAudit(session, "target_reached", {
+        bankroll: session.bankroll,
+        targetMax: session.research.targetMax,
+      });
+    }
+  }
 }
 
 function resolveSoloDealer(session) {
@@ -812,6 +899,15 @@ function resolveSoloDealer(session) {
   session.round.message = "AI dealer is drawing cards.";
 
   const allHandsBusted = session.hands.length > 0 && session.hands.every((hand) => hand.busted);
+
+  if (session.research?.enabled && !allHandsBusted) {
+    const controlled = chooseResearchOutcome(session);
+    session.dealerHand = controlled.dealerHand;
+    settleSoloRound(session, {
+      controllerReason: controlled.reason,
+    });
+    return;
+  }
 
   if (!allHandsBusted) {
     while (shouldDealerHit(session.dealerHand, session.dealerHitsSoft17)) {
@@ -845,6 +941,16 @@ function setSoloTurn(session) {
 }
 
 function startSoloRound(session) {
+  if (session.research?.enabled) {
+    if (session.research.ended) {
+      throw new Error("This research session has ended.");
+    }
+
+    if (session.research.paused) {
+      throw new Error("Wait for dealer input. You have reached the current research target.");
+    }
+  }
+
   if (session.status === "in_progress") {
     throw new Error("A SOLO round is already in progress.");
   }
@@ -1212,6 +1318,18 @@ function hydrateSnapshot(snapshot) {
         resetAvailableAt: null,
         message: "SOLO table ready. Request chips or place a bet.",
       },
+      research: {
+        enabled: Boolean(sessionData.research?.enabled),
+        targetMax: sessionData.research?.targetMax ?? null,
+        targetMin: sessionData.research?.targetMin ?? null,
+        approvedBankroll: Number(sessionData.research?.approvedBankroll || 0),
+        paused: false,
+        ended: Boolean(sessionData.research?.ended),
+        note: sessionData.research?.note || "",
+        alert: "",
+        log: sessionData.research?.log || [],
+        audit: sessionData.research?.audit || [],
+      },
     };
 
     state.soloSessions.set(session.id, session);
@@ -1318,7 +1436,6 @@ io.on("connection", (socket) => {
       }
 
       const approved = Boolean(payload?.approved);
-
       if (approved) {
         player.bankroll = Number((player.bankroll + player.buyInRequest.amount).toFixed(2));
         player.buyInStatus = "approved";
@@ -1344,17 +1461,94 @@ io.on("connection", (socket) => {
         throw new Error("This SOLO request has already been handled.");
       }
 
+      if (session.research?.enabled) {
+        const targetMax = payload?.targetMax === "" || payload?.targetMax == null
+          ? session.research.targetMax
+          : normalizeAmount(payload.targetMax);
+        const targetMin = payload?.targetMin === "" || payload?.targetMin == null
+          ? session.research.targetMin
+          : normalizeAmount(payload.targetMin);
+
+        session.research.targetMax = targetMax;
+        session.research.targetMin = targetMin;
+        session.research.note = String(payload?.note || session.research.note || "").trim();
+      }
+
       if (Boolean(payload?.approved)) {
         session.bankroll = Number((session.bankroll + session.buyInRequest.amount).toFixed(2));
+        session.research.approvedBankroll = Number(
+          ((session.research?.approvedBankroll || 0) + session.buyInRequest.amount).toFixed(2),
+        );
         session.buyInStatus = "approved";
         session.round.message = `SOLO buy-in approved. ${session.name} can play.`;
+        addResearchAudit(session, "buy_in_approved", {
+          dealerSocketId: socket.id,
+          amount: session.buyInRequest.amount,
+          targetMax: session.research?.targetMax,
+          targetMin: session.research?.targetMin,
+          note: session.research?.note,
+        });
       } else {
         session.buyInStatus = "denied";
         session.round.message = "SOLO buy-in denied. Submit a new request if needed.";
+        addResearchAudit(session, "buy_in_denied", {
+          dealerSocketId: socket.id,
+          amount: session.buyInRequest.amount,
+        });
       }
 
       session.buyInRequest = null;
       clampPendingBet(session);
+      await persistAndBroadcastSolo(session.id);
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, message: error.message });
+    }
+  });
+
+  socket.on("dealer:updateSoloResearch", async (payload, callback = () => {}) => {
+    try {
+      ensureDealer(payload?.token);
+      const session = getSoloSessionOrThrow(payload?.sessionId);
+
+      if (!session.research?.enabled) {
+        throw new Error("This SOLO session is not in research mode.");
+      }
+
+      if (payload?.targetMax !== undefined && payload.targetMax !== "") {
+        session.research.targetMax = normalizeAmount(payload.targetMax);
+      }
+
+      if (payload?.targetMin !== undefined && payload.targetMin !== "") {
+        session.research.targetMin = normalizeAmount(payload.targetMin);
+      }
+
+      if (payload?.note !== undefined) {
+        session.research.note = String(payload.note || "").trim();
+      }
+
+      if (payload?.paused !== undefined) {
+        session.research.paused = Boolean(payload.paused);
+      }
+
+      if (payload?.ended !== undefined) {
+        session.research.ended = Boolean(payload.ended);
+      }
+
+      session.research.alert = "";
+      session.round.message = session.research.ended
+        ? "Research session ended by dealer."
+        : session.research.paused
+          ? "Wait for dealer input. Research session is paused."
+          : "Research controls updated by dealer.";
+      addResearchAudit(session, "research_controls_updated", {
+        dealerSocketId: socket.id,
+        targetMax: session.research.targetMax,
+        targetMin: session.research.targetMin,
+        paused: session.research.paused,
+        ended: session.research.ended,
+        note: session.research.note,
+      });
       await persistAndBroadcastSolo(session.id);
       callback({ ok: true });
     } catch (error) {
@@ -1646,6 +1840,7 @@ io.on("connection", (socket) => {
       }
 
       let session = payload?.sessionId ? state.soloSessions.get(payload.sessionId) : null;
+      const researchMode = Boolean(payload?.researchMode);
 
       if (!session) {
         session = createSoloSessionRecord({
@@ -1653,11 +1848,16 @@ io.on("connection", (socket) => {
           playerId,
           name,
           socketId: socket.id,
+          researchMode,
         });
         state.soloSessions.set(session.id, session);
       } else if (session.playerId !== playerId) {
         throw new Error("That SOLO session belongs to another player.");
       } else {
+        if (researchMode && !session.research?.enabled && session.bankroll <= 0 && !session.hands.length) {
+          session.research.enabled = true;
+        }
+
         session.name = name;
         session.socketId = socket.id;
         session.connected = true;
@@ -1692,6 +1892,10 @@ io.on("connection", (socket) => {
       };
       session.buyInStatus = "pending";
       session.round.message = "SOLO buy-in request sent. Waiting for dealer approval.";
+      addResearchAudit(session, "buy_in_requested", {
+        amount: session.buyInRequest.amount,
+        bankroll: session.bankroll,
+      });
       await persistAndBroadcastSolo(session.id);
       callback({ ok: true });
     } catch (error) {

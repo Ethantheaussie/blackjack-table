@@ -190,6 +190,14 @@ input {
   border-color: rgba(240, 202, 112, 0.4);
 }
 
+.research-menu-tile,
+.research-card {
+  border-color: rgba(255, 123, 123, 0.38);
+  background:
+    linear-gradient(180deg, rgba(70, 17, 22, 0.82), rgba(15, 8, 10, 0.94)),
+    radial-gradient(circle at top right, rgba(255, 123, 123, 0.2), transparent 32%);
+}
+
 .tile-kicker {
   display: inline-flex;
   width: 2rem;
@@ -353,6 +361,55 @@ input {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.03);
   border-radius: 20px;
+}
+
+.research-banner {
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 123, 123, 0.45);
+  background: rgba(255, 123, 123, 0.18);
+  color: #ffe1e1;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  margin-bottom: 1rem;
+}
+
+.research-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.research-log {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 123, 123, 0.2);
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.research-log p {
+  margin: 0;
+}
+
+.research-request-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+  min-width: min(100%, 34rem);
+}
+
+.research-alert-card {
+  border-color: rgba(255, 123, 123, 0.38);
+  background: rgba(255, 123, 123, 0.08);
+}
+
+.research-disclosure-small {
+  color: #ffd7d7 !important;
+  font-weight: 700;
 }
 
 .metric-card,

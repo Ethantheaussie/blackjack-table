@@ -4,6 +4,7 @@ import { io } from "socket.io-client";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 const PLAYER_STORAGE_KEY = "blackjack-table-player";
 const SOLO_STORAGE_KEY = "blackjack-table-solo-player";
+const RESEARCH_STORAGE_KEY = "blackjack-table-research-player";
 const DEALER_STORAGE_KEY = "blackjack-table-dealer";
 const CHIP_VALUES = [5, 10, 20, 50];
 
@@ -301,6 +302,38 @@ function PlayerEntry({ onEnter, error }) {
 
       <button className="primary-button" onClick={() => onEnter(name)}>
         Continue as Player
+      </button>
+    </div>
+  );
+}
+
+function ResearchEntry({ onEnter, error }) {
+  const [name, setName] = useState("");
+
+  return (
+    <div className="auth-card research-card">
+      <div>
+        <p className="eyebrow">Transparent Simulator</p>
+        <h2>Enter RESEARCH MODE</h2>
+        <p className="muted">
+          This is not fair blackjack. Outcomes may be controlled for testing and every session is clearly disclosed.
+        </p>
+      </div>
+
+      <label>
+        Display name
+        <input
+          value={name}
+          placeholder="ResearchPlayer"
+          maxLength={20}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+
+      {error ? <div className="error-banner">{error}</div> : null}
+
+      <button className="danger-button" onClick={() => onEnter(name)}>
+        Continue to Research Mode
       </button>
     </div>
   );
@@ -766,6 +799,8 @@ function SoloTableView({
       : now >= Number(solo.round.resetAvailableAt);
   const bettingLocked = solo.status !== "waiting";
   const canStart = solo.status === "waiting" && player.pendingBet > 0 && player.pendingBet <= player.bankroll;
+  const research = solo.research;
+  const researchLog = research?.log || [];
   const tableView = {
     ...solo,
     players: [player],
@@ -784,7 +819,7 @@ function SoloTableView({
       ) : null}
 
       <SectionCard
-        title="SOLO Blackjack"
+        title={research?.enabled ? "SOLO Research Mode" : "SOLO Blackjack"}
         subtitle={`AI-hosted private table - Session #${solo.id}`}
         actions={
           <button className="ghost-button" onClick={onLeave}>
@@ -792,15 +827,56 @@ function SoloTableView({
           </button>
         }
       >
+        {research?.enabled ? (
+          <div className="research-banner">
+            RESEARCH MODE ACTIVE: Outcomes in this session may be controlled for testing purposes. This is not a fair blackjack game.
+          </div>
+        ) : null}
         <div className="info-banner">
           AI handles the cards and gameplay. Human dealers still approve buy-ins and rebuys.
         </div>
+        {research?.enabled ? (
+          <div className="research-grid">
+            <div className="metric-card">
+              <span>Approved bankroll</span>
+              <strong>{currency(research.approvedBankroll)}</strong>
+            </div>
+            <div className="metric-card">
+              <span>Target max balance</span>
+              <strong>{research.targetMax ? currency(research.targetMax) : "None"}</strong>
+            </div>
+            <div className="metric-card">
+              <span>Target min balance</span>
+              <strong>{research.targetMin ? currency(research.targetMin) : "None"}</strong>
+            </div>
+            <div className="metric-card">
+              <span>Research status</span>
+              <strong>{research.ended ? "Ended" : research.paused ? "Paused" : "Active"}</strong>
+            </div>
+          </div>
+        ) : null}
         <div className="status-row">
           <StatusPill tone={solo.status === "waiting" ? "success" : solo.status === "finished" ? "neutral" : "warning"}>
             {solo.status}
           </StatusPill>
           <span className="muted">{solo.round.message}</span>
         </div>
+        {research?.enabled ? (
+          <div className="research-log">
+            <strong>Research note</strong>
+            <p>{research.note || "No dealer note yet."}</p>
+            <strong>Session event log</strong>
+            {researchLog.length ? (
+              researchLog.slice(-5).map((entry) => (
+                <p key={entry.id} className="muted">
+                  {entry.event.replaceAll("_", " ")} - {entry.reason || entry.controllerReason || entry.note || entry.amount || ""}
+                </p>
+              ))
+            ) : (
+              <p className="muted">No research events yet.</p>
+            )}
+          </div>
+        ) : null}
       </SectionCard>
 
       <div className="content-grid player-layout">
@@ -814,7 +890,7 @@ function SoloTableView({
             disabled={bettingLocked}
           />
           <div className="actions-row solo-start-row">
-            <button className="primary-button" disabled={!canStart} onClick={onStartRound}>
+            <button className="primary-button" disabled={!canStart || research?.paused || research?.ended} onClick={onStartRound}>
               Start SOLO hand
             </button>
           </div>
@@ -839,32 +915,114 @@ function SoloRequestBar({ requests, onRespond }) {
       </div>
       <div className="solo-request-list">
         {requests.map((request) => (
-          <div key={request.requestId} className="solo-request-card">
-            <div>
-              <strong>{request.playerName}</strong>
-              <p>
-                {request.requestType} - {currency(request.amount)} - bankroll {currency(request.bankroll)}
-              </p>
-              <p className="muted">SOLO #{request.sessionId}</p>
-            </div>
-            <div className="inline-actions">
-              <button
-                className="secondary-button"
-                onClick={() => onRespond(request.sessionId, request.requestId, true)}
-              >
-                Accept
-              </button>
-              <button
-                className="ghost-button"
-                onClick={() => onRespond(request.sessionId, request.requestId, false)}
-              >
-                Deny
-              </button>
-            </div>
-          </div>
+          <SoloRequestCard key={request.requestId} request={request} onRespond={onRespond} />
         ))}
       </div>
     </section>
+  );
+}
+
+function SoloRequestCard({ request, onRespond }) {
+  const [targetMax, setTargetMax] = useState(request.targetMax || "");
+  const [targetMin, setTargetMin] = useState(request.targetMin || "");
+  const [note, setNote] = useState(request.note || "");
+
+  if (request.kind === "research_alert") {
+    return (
+      <div className="solo-request-card research-alert-card">
+        <div>
+          <strong>{request.playerName}</strong>
+          <p>
+            Research alert: {request.requestType} - bankroll {currency(request.bankroll)}
+          </p>
+          <p className="muted">
+            SOLO #{request.sessionId} - target max {request.targetMax ? currency(request.targetMax) : "none"}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`solo-request-card ${request.researchMode ? "research-alert-card" : ""}`}>
+      <div>
+        <strong>{request.playerName}</strong>
+        <p>
+          {request.requestType} - {currency(request.amount)} - bankroll {currency(request.bankroll)}
+        </p>
+        <p className="muted">SOLO #{request.sessionId}</p>
+        {request.researchMode ? <p className="research-disclosure-small">RESEARCH MODE request</p> : null}
+      </div>
+
+      {request.researchMode ? (
+        <div className="research-request-controls">
+          <input
+            value={targetMax}
+            type="number"
+            min="1"
+            placeholder="Target max"
+            onChange={(event) => setTargetMax(event.target.value)}
+          />
+          <input
+            value={targetMin}
+            type="number"
+            min="1"
+            placeholder="Target min"
+            onChange={(event) => setTargetMin(event.target.value)}
+          />
+          <input
+            value={note}
+            placeholder="Research note"
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </div>
+      ) : null}
+
+      <div className="inline-actions">
+        <button
+          className="secondary-button"
+          onClick={() => onRespond(request.sessionId, request.requestId, true, { targetMax, targetMin, note })}
+        >
+          Accept
+        </button>
+        <button
+          className="ghost-button"
+          onClick={() => onRespond(request.sessionId, request.requestId, false, { targetMax, targetMin, note })}
+        >
+          Deny
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResearchControlPanel({ sessionId, onUpdate }) {
+  const [targetMax, setTargetMax] = useState("");
+  const [targetMin, setTargetMin] = useState("");
+  const [note, setNote] = useState("");
+
+  return (
+    <SectionCard title="Research Session Controls" subtitle="Visible controls for active SOLO research sessions.">
+      <div className="research-request-controls">
+        <input value={targetMax} type="number" min="1" placeholder="New target max" onChange={(event) => setTargetMax(event.target.value)} />
+        <input value={targetMin} type="number" min="1" placeholder="New target min" onChange={(event) => setTargetMin(event.target.value)} />
+        <input value={note} placeholder="Research note visible to player" onChange={(event) => setNote(event.target.value)} />
+      </div>
+      <div className="inline-actions">
+        <button className="secondary-button" onClick={() => onUpdate(sessionId, { targetMax, targetMin, note })}>
+          Save targets/note
+        </button>
+        <button className="ghost-button" onClick={() => onUpdate(sessionId, { paused: true, note })}>
+          Pause
+        </button>
+        <button className="secondary-button" onClick={() => onUpdate(sessionId, { paused: false, note })}>
+          Resume
+        </button>
+        <button className="danger-button" onClick={() => onUpdate(sessionId, { ended: true, paused: true, note })}>
+          End session
+        </button>
+      </div>
+    </SectionCard>
   );
 }
 
@@ -876,6 +1034,7 @@ function DealerDashboard({
   onToggleDebugMode,
   onRespondBuyIn,
   onRespondSoloBuyIn,
+  onUpdateSoloResearch,
   onStartRound,
   onResolveRound,
   onForceDealerWin,
@@ -979,6 +1138,16 @@ function DealerDashboard({
               onResolveRound={onResolveRound}
               onResetRound={onResetRound}
             />
+
+            {soloRequests
+              .filter((request) => request.researchMode)
+              .map((request) => (
+                <ResearchControlPanel
+                  key={`controls-${request.sessionId}`}
+                  sessionId={request.sessionId}
+                  onUpdate={onUpdateSoloResearch}
+                />
+              ))}
 
             <SectionCard
               title={selectedLobby.name}
@@ -1172,6 +1341,10 @@ export default function App() {
     const raw = localStorage.getItem(SOLO_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   });
+  const [researchSession, setResearchSession] = useState(() => {
+    const raw = localStorage.getItem(RESEARCH_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  });
   const [publicLobbies, setPublicLobbies] = useState([]);
   const [dealerLobbies, setDealerLobbies] = useState([]);
   const [soloRequests, setSoloRequests] = useState([]);
@@ -1200,12 +1373,14 @@ export default function App() {
   useEffect(() => {
     if (dealerSession?.token) {
       setMode("dealer");
+    } else if (researchSession?.name) {
+      setMode("research");
     } else if (soloSession?.name) {
       setMode("solo");
     } else if (playerSession?.name) {
       setMode("player");
     }
-  }, [dealerSession, playerSession, soloSession]);
+  }, [dealerSession, playerSession, soloSession, researchSession]);
 
   useEffect(() => {
     async function syncCurrentSession() {
@@ -1228,17 +1403,19 @@ export default function App() {
         return;
       }
 
-      if (mode === "solo" && soloSession?.name) {
-        const syncKey = `${socket.id}:${soloSession.sessionId || "new"}:${soloSession.playerId}`;
+      if ((mode === "solo" && soloSession?.name) || (mode === "research" && researchSession?.name)) {
+        const activeSoloSession = mode === "research" ? researchSession : soloSession;
+        const syncKey = `${socket.id}:${activeSoloSession.sessionId || "new"}:${activeSoloSession.playerId}:${mode}`;
 
         if (lastSyncedSoloRef.current === syncKey) {
           return;
         }
 
         const response = await emitAsync("solo:join", {
-          sessionId: soloSession.sessionId,
-          playerId: soloSession.playerId,
-          name: soloSession.name,
+          sessionId: activeSoloSession.sessionId,
+          playerId: activeSoloSession.playerId,
+          name: activeSoloSession.name,
+          researchMode: mode === "research",
         });
 
         if (!response.ok) {
@@ -1246,10 +1423,15 @@ export default function App() {
           return;
         }
 
-        const session = { ...soloSession, sessionId: response.sessionId, playerId: response.playerId };
-        setSoloSession(session);
-        localStorage.setItem(SOLO_STORAGE_KEY, JSON.stringify(session));
-        lastSyncedSoloRef.current = `${socket.id}:${response.sessionId}:${response.playerId}`;
+        const session = { ...activeSoloSession, sessionId: response.sessionId, playerId: response.playerId };
+        if (mode === "research") {
+          setResearchSession(session);
+          localStorage.setItem(RESEARCH_STORAGE_KEY, JSON.stringify(session));
+        } else {
+          setSoloSession(session);
+          localStorage.setItem(SOLO_STORAGE_KEY, JSON.stringify(session));
+        }
+        lastSyncedSoloRef.current = `${socket.id}:${response.sessionId}:${response.playerId}:${mode}`;
         setError("");
         return;
       }
@@ -1284,7 +1466,7 @@ export default function App() {
     return () => {
       socket.off("connect", syncCurrentSession);
     };
-  }, [dealerSession, mode, playerSession, soloSession]);
+  }, [dealerSession, mode, playerSession, soloSession, researchSession]);
 
   async function handleDealerLogin(credentials) {
     setBusy(true);
@@ -1365,6 +1547,43 @@ export default function App() {
     localStorage.setItem(SOLO_STORAGE_KEY, JSON.stringify(session));
     lastSyncedSoloRef.current = `${socket.id || ""}:${response.sessionId}:${response.playerId}`;
     setMode("solo");
+  }
+
+  async function handleResearchEnter(name) {
+    const trimmed = String(name || "").trim();
+
+    if (!trimmed) {
+      setError("Please enter a display name for research mode.");
+      return;
+    }
+
+    const startingSession = {
+      name: trimmed,
+      playerId: researchSession?.playerId || crypto.randomUUID(),
+      sessionId: researchSession?.sessionId || null,
+    };
+
+    const response = await emitAsync("solo:join", {
+      ...startingSession,
+      researchMode: true,
+    });
+
+    if (!response.ok) {
+      setError(response.message);
+      return;
+    }
+
+    const session = {
+      ...startingSession,
+      playerId: response.playerId,
+      sessionId: response.sessionId,
+    };
+
+    setError("");
+    setResearchSession(session);
+    localStorage.setItem(RESEARCH_STORAGE_KEY, JSON.stringify(session));
+    lastSyncedSoloRef.current = `${socket.id || ""}:${response.sessionId}:${response.playerId}:research`;
+    setMode("research");
   }
 
   async function joinLobby(lobbyId) {
@@ -1465,9 +1684,10 @@ export default function App() {
   }
 
   async function soloRequestBuyIn(amount) {
+    const activeSession = mode === "research" ? researchSession : soloSession;
     const response = await emitAsync("solo:requestBuyIn", {
-      sessionId: soloSession.sessionId,
-      playerId: soloSession.playerId,
+      sessionId: activeSession.sessionId,
+      playerId: activeSession.playerId,
       amount,
     });
 
@@ -1475,9 +1695,10 @@ export default function App() {
   }
 
   async function soloAddChip(amount) {
+    const activeSession = mode === "research" ? researchSession : soloSession;
     const response = await emitAsync("solo:addChip", {
-      sessionId: soloSession.sessionId,
-      playerId: soloSession.playerId,
+      sessionId: activeSession.sessionId,
+      playerId: activeSession.playerId,
       amount,
     });
 
@@ -1485,27 +1706,30 @@ export default function App() {
   }
 
   async function soloClearBet() {
+    const activeSession = mode === "research" ? researchSession : soloSession;
     const response = await emitAsync("solo:clearBet", {
-      sessionId: soloSession.sessionId,
-      playerId: soloSession.playerId,
+      sessionId: activeSession.sessionId,
+      playerId: activeSession.playerId,
     });
 
     setError(response.ok ? "" : response.message);
   }
 
   async function soloStartRound() {
+    const activeSession = mode === "research" ? researchSession : soloSession;
     const response = await emitAsync("solo:startRound", {
-      sessionId: soloSession.sessionId,
-      playerId: soloSession.playerId,
+      sessionId: activeSession.sessionId,
+      playerId: activeSession.playerId,
     });
 
     setError(response.ok ? "" : response.message);
   }
 
   async function soloAction(action) {
+    const activeSession = mode === "research" ? researchSession : soloSession;
     const response = await emitAsync("solo:action", {
-      sessionId: soloSession.sessionId,
-      playerId: soloSession.playerId,
+      sessionId: activeSession.sessionId,
+      playerId: activeSession.playerId,
       action,
     });
 
@@ -1513,9 +1737,10 @@ export default function App() {
   }
 
   async function soloResetRound() {
+    const activeSession = mode === "research" ? researchSession : soloSession;
     const response = await emitAsync("solo:resetRound", {
-      sessionId: soloSession.sessionId,
-      playerId: soloSession.playerId,
+      sessionId: activeSession.sessionId,
+      playerId: activeSession.playerId,
     });
 
     setError(response.ok ? "" : response.message);
@@ -1525,6 +1750,14 @@ export default function App() {
     localStorage.removeItem(SOLO_STORAGE_KEY);
     lastSyncedSoloRef.current = "";
     setSoloSession(null);
+    setSoloView(null);
+    setMode("menu");
+  }
+
+  function resetResearch() {
+    localStorage.removeItem(RESEARCH_STORAGE_KEY);
+    lastSyncedSoloRef.current = "";
+    setResearchSession(null);
     setSoloView(null);
     setMode("menu");
   }
@@ -1581,6 +1814,10 @@ export default function App() {
             <button className="ghost-button" onClick={resetSolo}>
               Exit SOLO
             </button>
+          ) : mode === "research" ? (
+            <button className="ghost-button" onClick={resetResearch}>
+              Exit Research Mode
+            </button>
           ) : null}
         </div>
       </header>
@@ -1606,6 +1843,12 @@ export default function App() {
             <h2>SOLO</h2>
             <p>Play privately against an AI dealer while human dealers approve your credits.</p>
           </button>
+
+          <button className="menu-tile research-menu-tile" onClick={() => { setError(""); setMode(researchSession?.name ? "research" : "research-entry"); }}>
+            <span className="tile-kicker">R</span>
+            <h2>RESEARCH MODE</h2>
+            <p>Transparent controlled SOLO simulator. Outcomes may be manipulated for testing.</p>
+          </button>
         </main>
       ) : null}
 
@@ -1615,6 +1858,8 @@ export default function App() {
 
       {mode === "solo-entry" ? <PlayerEntry onEnter={handleSoloEnter} error={error} /> : null}
 
+      {mode === "research-entry" ? <ResearchEntry onEnter={handleResearchEnter} error={error} /> : null}
+
       {mode === "dealer" ? (
         <DealerDashboard
           lobbies={dealerLobbies}
@@ -1623,7 +1868,8 @@ export default function App() {
           onToggleLobby={(lobbyId, isOpen) => dealerAction("dealer:toggleLobby", { lobbyId, isOpen })}
           onToggleDebugMode={(lobbyId, debugMode) => dealerAction("dealer:toggleDebugMode", { lobbyId, debugMode })}
           onRespondBuyIn={(lobbyId, playerId, approved) => dealerAction("dealer:respondBuyIn", { lobbyId, playerId, approved })}
-          onRespondSoloBuyIn={(sessionId, requestId, approved) => dealerAction("dealer:respondSoloBuyIn", { sessionId, requestId, approved })}
+          onRespondSoloBuyIn={(sessionId, requestId, approved, researchControls = {}) => dealerAction("dealer:respondSoloBuyIn", { sessionId, requestId, approved, ...researchControls })}
+          onUpdateSoloResearch={(sessionId, updates) => dealerAction("dealer:updateSoloResearch", { sessionId, ...updates })}
           onStartRound={(lobbyId) => dealerAction("dealer:startRound", { lobbyId })}
           onResolveRound={(lobbyId) => dealerAction("dealer:resolveRound", { lobbyId })}
           onForceDealerWin={(lobbyId) => dealerAction("dealer:forceDealerWin", { lobbyId })}
@@ -1663,6 +1909,20 @@ export default function App() {
           onAction={soloAction}
           onResetRound={soloResetRound}
           onLeave={resetSolo}
+        />
+      ) : null}
+
+      {mode === "research" ? (
+        <SoloTableView
+          solo={soloView}
+          onRequestBuyIn={soloRequestBuyIn}
+          onAddChip={soloAddChip}
+          onClearBet={soloClearBet}
+          onAllIn={soloAddChip}
+          onStartRound={soloStartRound}
+          onAction={soloAction}
+          onResetRound={soloResetRound}
+          onLeave={resetResearch}
         />
       ) : null}
     </div>
