@@ -902,7 +902,7 @@ function SoloTableView({
   );
 }
 
-function SoloRequestBar({ requests, onRespond }) {
+function SoloRequestBar({ requests, onRespond, onUpdateResearch }) {
   if (!requests.length) {
     return null;
   }
@@ -915,14 +915,19 @@ function SoloRequestBar({ requests, onRespond }) {
       </div>
       <div className="solo-request-list">
         {requests.map((request) => (
-          <SoloRequestCard key={request.requestId} request={request} onRespond={onRespond} />
+          <SoloRequestCard
+            key={request.requestId}
+            request={request}
+            onRespond={onRespond}
+            onUpdateResearch={onUpdateResearch}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function SoloRequestCard({ request, onRespond }) {
+function SoloRequestCard({ request, onRespond, onUpdateResearch }) {
   const [targetMax, setTargetMax] = useState(request.targetMax || "");
   const [targetMin, setTargetMin] = useState(request.targetMin || "");
   const [note, setNote] = useState(request.note || "");
@@ -938,6 +943,47 @@ function SoloRequestCard({ request, onRespond }) {
           <p className="muted">
             SOLO #{request.sessionId} - target max {request.targetMax ? currency(request.targetMax) : "none"}
           </p>
+        </div>
+        <div className="research-request-controls">
+          <input
+            value={targetMax}
+            type="number"
+            min="1"
+            placeholder="New target max"
+            onChange={(event) => setTargetMax(event.target.value)}
+          />
+          <input
+            value={targetMin}
+            type="number"
+            min="1"
+            placeholder="New target min"
+            onChange={(event) => setTargetMin(event.target.value)}
+          />
+          <input
+            value={note}
+            placeholder="Research note"
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </div>
+        <div className="inline-actions">
+          <button
+            className="secondary-button"
+            onClick={() => onUpdateResearch(request.sessionId, { targetMax, targetMin, note, paused: false })}
+          >
+            Save limits & resume
+          </button>
+          <button
+            className="ghost-button"
+            onClick={() => onUpdateResearch(request.sessionId, { targetMax, targetMin, note })}
+          >
+            Save only
+          </button>
+          <button
+            className="danger-button"
+            onClick={() => onUpdateResearch(request.sessionId, { ended: true, paused: true, note })}
+          >
+            End session
+          </button>
         </div>
       </div>
     );
@@ -1071,7 +1117,11 @@ function DealerDashboard({
   return (
     <div className="content-grid two-column">
       <div className="dashboard-full">
-        <SoloRequestBar requests={soloRequests} onRespond={onRespondSoloBuyIn} />
+        <SoloRequestBar
+          requests={soloRequests}
+          onRespond={onRespondSoloBuyIn}
+          onUpdateResearch={onUpdateSoloResearch}
+        />
       </div>
 
       <div className="stack gap-md">

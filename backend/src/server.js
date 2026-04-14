@@ -1515,6 +1515,8 @@ io.on("connection", (socket) => {
         throw new Error("This SOLO session is not in research mode.");
       }
 
+      const previousTargetMax = session.research.targetMax;
+
       if (payload?.targetMax !== undefined && payload.targetMax !== "") {
         session.research.targetMax = normalizeAmount(payload.targetMax);
       }
@@ -1536,11 +1538,17 @@ io.on("connection", (socket) => {
       }
 
       session.research.alert = "";
+      const targetLoweredBelowBankroll =
+        session.research.targetMax &&
+        session.research.targetMax !== previousTargetMax &&
+        session.research.targetMax < session.bankroll;
       session.round.message = session.research.ended
         ? "Research session ended by dealer."
         : session.research.paused
           ? "Wait for dealer input. Research session is paused."
-          : "Research controls updated by dealer.";
+          : targetLoweredBelowBankroll
+            ? `Dealer changed target balance to $${session.research.targetMax}. Research mode is controlling outcomes toward the new target.`
+            : "Research controls updated by dealer. Session resumed.";
       addResearchAudit(session, "research_controls_updated", {
         dealerSocketId: socket.id,
         targetMax: session.research.targetMax,
