@@ -33,9 +33,22 @@ function hand(value, bet = 10) {
   const session = {
     bankroll: 60,
     hands: [],
-    research: { targetMax: 60 },
+    research: { targetMax: 60, roundStartBankroll: 50 },
   };
   assert.equal(hasReachedResearchTarget(session), true, "target reached should pause the session");
+}
+
+{
+  const session = {
+    bankroll: 70,
+    hands: [hand(18, 10)],
+    dealerHand: [{ rank: "7", suit: "clubs" }, { rank: "K", suit: "hearts" }],
+    research: { targetMax: 60, roundStartBankroll: 70 },
+  };
+  const result = chooseResearchOutcome(session);
+  assert.equal(result.dealerHand[0].rank, "7", "research controller must preserve the visible upcard");
+  assert.equal(result.outcome, "dealer_win", "cap protection should prefer dealer win over push when possible");
+  assert.equal(hasReachedResearchTarget({ ...session, bankroll: 70 }), false, "already above target should not pause every round");
 }
 
 {

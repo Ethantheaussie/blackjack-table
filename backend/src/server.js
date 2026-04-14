@@ -115,6 +115,7 @@ function createSoloSessionRecord({ sessionId, playerId, name, socketId, research
       targetMax: null,
       targetMin: null,
       approvedBankroll: 0,
+      roundStartBankroll: 0,
       paused: false,
       ended: false,
       note: "",
@@ -472,6 +473,7 @@ function serializeSoloSession(session) {
           targetMax: session.research.targetMax,
           targetMin: session.research.targetMin,
           approvedBankroll: session.research.approvedBankroll,
+          roundStartBankroll: session.research.roundStartBankroll,
           paused: session.research.paused,
           ended: session.research.ended,
           note: session.research.note,
@@ -941,10 +943,10 @@ function setSoloTurn(session) {
 }
 
 function startSoloRound(session) {
-  if (session.research?.enabled) {
-    if (session.research.ended) {
-      throw new Error("This research session has ended.");
-    }
+    if (session.research?.enabled) {
+      if (session.research.ended) {
+        throw new Error("This research session has ended.");
+      }
 
     if (session.research.paused) {
       throw new Error("Wait for dealer input. You have reached the current research target.");
@@ -1110,6 +1112,8 @@ function findRankCombinationForTarget(baseCards, targetTotal, maxAdditionalCards
       if (result) {
         return result;
       }
+
+      session.research.roundStartBankroll = Number(session.bankroll || 0);
     }
 
     return null;
@@ -1323,6 +1327,7 @@ function hydrateSnapshot(snapshot) {
         targetMax: sessionData.research?.targetMax ?? null,
         targetMin: sessionData.research?.targetMin ?? null,
         approvedBankroll: Number(sessionData.research?.approvedBankroll || 0),
+        roundStartBankroll: Number(sessionData.research?.roundStartBankroll || 0),
         paused: false,
         ended: Boolean(sessionData.research?.ended),
         note: sessionData.research?.note || "",
