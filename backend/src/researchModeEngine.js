@@ -87,7 +87,7 @@ function makeDealerWinHand(playerTotal, baseCards = []) {
     return buildDealerHand(baseCards, bustRanks || ["K", "Q", "2"]);
   }
 
-  const target = Math.min(21, Math.max(17, playerTotal + 1));
+  const target = Math.min(21, Math.max(18, playerTotal + 1));
   const ranks = findRanksForTarget(baseCards, target);
 
   return buildDealerHand(baseCards, ranks || ["K", "Q"]);

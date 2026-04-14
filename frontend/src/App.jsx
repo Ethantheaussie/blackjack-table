@@ -646,7 +646,7 @@ function PlayerLobbyView({ lobby, playerId, onRequestBuyIn, onAddChip, onClearBe
 
       <SectionCard
         title={lobby.name}
-        subtitle={`Lobby #${lobby.id} - Dealer rule: ${lobby.dealerHitsSoft17 ? "Hit soft 17" : "Stand on soft 17"}`}
+        subtitle={`Lobby #${lobby.id} - Dealer rule: Stand on all 17s`}
         actions={
           <button className="ghost-button" onClick={onLeave}>
             Leave lobby

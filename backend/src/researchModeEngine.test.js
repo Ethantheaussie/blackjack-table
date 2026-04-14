@@ -58,6 +58,19 @@ function hand(value, bet = 10) {
 
 {
   const session = {
+    bankroll: 20,
+    hands: [hand(16, 20)],
+    dealerHand: [{ rank: "10", suit: "spades" }, { rank: "K", suit: "hearts" }],
+    research: { targetMax: 40, roundStartBankroll: 20 },
+  };
+  const result = chooseResearchOutcome(session);
+  const dealerTotal = getHandValue(result.dealerHand).total;
+  assert.equal(result.outcome, "dealer_win", "cap protection should choose dealer win when possible");
+  assert.ok(dealerTotal >= 18 && dealerTotal <= 21, "dealer win should be a final standing hand above 17");
+}
+
+{
+  const session = {
     bankroll: 0,
     hands: [hand(18, 5)],
     research: { targetMin: 25 },

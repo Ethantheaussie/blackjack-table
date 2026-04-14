@@ -818,7 +818,7 @@ function resolveDealer(lobby) {
   lobby.round.phase = "dealer_turn";
   lobby.round.message = "Dealer is drawing cards.";
 
-  while (shouldDealerHit(lobby.dealerHand, lobby.dealerHitsSoft17)) {
+  while (shouldDealerHit(lobby.dealerHand, false)) {
     lobby.dealerHand.push(drawCard(lobby));
   }
 
@@ -916,7 +916,7 @@ function resolveSoloDealer(session) {
   }
 
   if (!allHandsBusted) {
-    while (shouldDealerHit(session.dealerHand, session.dealerHitsSoft17)) {
+    while (shouldDealerHit(session.dealerHand, false)) {
       session.dealerHand.push(drawCard(session));
     }
   }
