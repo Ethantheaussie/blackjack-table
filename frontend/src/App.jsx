@@ -817,67 +817,7 @@ function SoloTableView({
           <div className="win-overlay-text">WIN {currency(winFlashAmount)}</div>
         </div>
       ) : null}
-
-      <SectionCard
-        title={research?.enabled ? "SOLO Research Mode" : "SOLO Blackjack"}
-        subtitle={`AI-hosted private table - Session #${solo.id}`}
-        actions={
-          <button className="ghost-button" onClick={onLeave}>
-            Exit SOLO
-          </button>
-        }
-      >
-        {research?.enabled ? (
-          <div className="research-banner">
-            RESEARCH MODE ACTIVE: Outcomes in this session may be controlled for testing purposes. This is not a fair blackjack game.
-          </div>
-        ) : null}
-        <div className="info-banner">
-          AI handles the cards and gameplay. Human dealers still approve buy-ins and rebuys.
-        </div>
-        {research?.enabled ? (
-          <div className="research-grid">
-            <div className="metric-card">
-              <span>Approved bankroll</span>
-              <strong>{currency(research.approvedBankroll)}</strong>
-            </div>
-            <div className="metric-card">
-              <span>Target max balance</span>
-              <strong>{research.targetMax ? currency(research.targetMax) : "None"}</strong>
-            </div>
-            <div className="metric-card">
-              <span>Target min balance</span>
-              <strong>{research.targetMin ? currency(research.targetMin) : "None"}</strong>
-            </div>
-            <div className="metric-card">
-              <span>Research status</span>
-              <strong>{research.ended ? "Ended" : research.paused ? "Paused" : "Active"}</strong>
-            </div>
-          </div>
-        ) : null}
-        <div className="status-row">
-          <StatusPill tone={solo.status === "waiting" ? "success" : solo.status === "finished" ? "neutral" : "warning"}>
-            {solo.status}
-          </StatusPill>
-          <span className="muted">{solo.round.message}</span>
-        </div>
-        {research?.enabled ? (
-          <div className="research-log">
-            <strong>Research note</strong>
-            <p>{research.note || "No dealer note yet."}</p>
-            <strong>Session event log</strong>
-            {researchLog.length ? (
-              researchLog.slice(-5).map((entry) => (
-                <p key={entry.id} className="muted">
-                  {entry.event.replaceAll("_", " ")} - {entry.reason || entry.controllerReason || entry.note || entry.amount || ""}
-                </p>
-              ))
-            ) : (
-              <p className="muted">No research events yet.</p>
-            )}
-          </div>
-        ) : null}
-      </SectionCard>
+        
 
       <div className="content-grid player-layout">
         <SectionCard title="SOLO Bankroll" subtitle="Request dealer-approved credits, then queue your AI-table bet.">
