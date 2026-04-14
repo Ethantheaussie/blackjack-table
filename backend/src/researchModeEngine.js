@@ -94,6 +94,13 @@ function makeDealerWinHand(playerTotal, baseCards = []) {
 }
 
 function makeDealerLoseHand(playerTotal, baseCards = []) {
+  const bustHand = makeDealerBustHand(baseCards);
+  const bustSetupTotal = getHandValue(bustHand.slice(0, -1)).total;
+
+  if (bustHand.length > baseCards.length && bustSetupTotal < 17 && getHandValue(bustHand).total > 21) {
+    return bustHand;
+  }
+
   if (playerTotal >= 18 && playerTotal <= 21) {
     for (let target = playerTotal - 1; target >= 17; target -= 1) {
       const ranks = findRanksForTarget(baseCards, target);
@@ -104,7 +111,7 @@ function makeDealerLoseHand(playerTotal, baseCards = []) {
     }
   }
 
-  return makeDealerBustHand(baseCards);
+  return bustHand;
 }
 
 function makeDealerPushHand(playerTotal, baseCards = []) {
@@ -150,7 +157,7 @@ function findBustRanks(baseCards, maxCards = 4) {
 }
 
 function makeDealerBustHand(baseCards = []) {
-  for (let setupTotal = 16; setupTotal >= 12; setupTotal -= 1) {
+  for (let setupTotal = 16; setupTotal >= 4; setupTotal -= 1) {
     const setupRanks = findRanksForTarget(baseCards, setupTotal);
 
     if (!setupRanks) {
@@ -158,7 +165,13 @@ function makeDealerBustHand(baseCards = []) {
     }
 
     const setupCards = previewCards(baseCards, setupRanks);
-    const bustRanks = findBustRanks(setupCards, 1);
+    const setupValue = getHandValue(setupCards);
+
+    if (setupValue.total >= 17) {
+      continue;
+    }
+
+    const bustRanks = findBustRanks(setupCards, 3);
 
     if (bustRanks) {
       return buildDealerHand(baseCards, [...setupRanks, ...bustRanks]);

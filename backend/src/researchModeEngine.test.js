@@ -100,7 +100,8 @@ function hand(value, bet = 10) {
   const result = chooseResearchOutcome(session);
   const dealerTotal = getHandValue(result.dealerHand).total;
   assert.equal(result.dealerHand[0].rank, "10", "player-win research result must preserve visible upcard");
-  assert.ok(dealerTotal >= 17 && dealerTotal < 19, "dealer should stand below player when blackjack rules allow it");
+  assert.ok(dealerTotal > 21, "player-win research result should prefer a dealer bust sequence");
+  assert.ok(getHandValue(result.dealerHand.slice(0, -1)).total < 17, "dealer bust should come after a required hit below 17");
 }
 
 {
@@ -115,6 +116,19 @@ function hand(value, bet = 10) {
   assert.equal(result.dealerHand[0].rank, "10", "bust sequence must preserve visible upcard");
   assert.ok(dealerTotal > 21, "dealer must bust when player total is too low for a legal dealer stand-loss");
   assert.ok(getHandValue(result.dealerHand.slice(0, -1)).total < 17, "dealer bust should come from a required hit below 17");
+}
+
+{
+  const session = {
+    bankroll: 30,
+    hands: [hand(18, 20)],
+    dealerHand: [{ rank: "7", suit: "spades" }, { rank: "K", suit: "hearts" }],
+    research: { targetMin: 45 },
+  };
+  const result = chooseResearchOutcome(session);
+  assert.equal(result.dealerHand[0].rank, "7", "dealer upcard must remain visible card");
+  assert.ok(getHandValue(result.dealerHand.slice(0, -1)).total < 17, "dealer should be below 17 before final controlled bust card");
+  assert.ok(getHandValue(result.dealerHand).total > 21, "dealer should bust to ensure player win");
 }
 
 console.log("Research mode engine tests passed.");
