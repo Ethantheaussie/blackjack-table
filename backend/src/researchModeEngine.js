@@ -94,8 +94,8 @@ function makeDealerWinHand(playerTotal, baseCards = []) {
 }
 
 function makeDealerLoseHand(playerTotal, baseCards = []) {
-  if (playerTotal >= 17 && playerTotal <= 21) {
-    for (let target = playerTotal - 1; target >= 4; target -= 1) {
+  if (playerTotal >= 18 && playerTotal <= 21) {
+    for (let target = playerTotal - 1; target >= 17; target -= 1) {
       const ranks = findRanksForTarget(baseCards, target);
 
       if (ranks) {
@@ -104,7 +104,7 @@ function makeDealerLoseHand(playerTotal, baseCards = []) {
     }
   }
 
-  return buildDealerHand(baseCards, findBustRanks(baseCards) || ["10", "6", "K"]);
+  return makeDealerBustHand(baseCards);
 }
 
 function makeDealerPushHand(playerTotal, baseCards = []) {
@@ -147,6 +147,25 @@ function findBustRanks(baseCards, maxCards = 4) {
   }
 
   return null;
+}
+
+function makeDealerBustHand(baseCards = []) {
+  for (let setupTotal = 16; setupTotal >= 12; setupTotal -= 1) {
+    const setupRanks = findRanksForTarget(baseCards, setupTotal);
+
+    if (!setupRanks) {
+      continue;
+    }
+
+    const setupCards = previewCards(baseCards, setupRanks);
+    const bustRanks = findBustRanks(setupCards, 1);
+
+    if (bustRanks) {
+      return buildDealerHand(baseCards, [...setupRanks, ...bustRanks]);
+    }
+  }
+
+  return buildDealerHand(baseCards, findBustRanks(baseCards) || ["10", "6", "K"]);
 }
 
 function projectedBankrollAfterOutcome(session, outcome) {

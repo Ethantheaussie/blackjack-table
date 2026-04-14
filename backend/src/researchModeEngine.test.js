@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { getHandValue } from "./game.js";
 import {
   chooseResearchOutcome,
   hasReachedResearchTarget,
@@ -74,6 +75,33 @@ function hand(value, bet = 10) {
   const cards = makeResearchInitialPlayerCards(session, () => ({ rank: "A", suit: "spades" }));
   assert.notEqual(cards.map((card) => card.rank).join(","), "A,A", "research cap protection should not use random draw here");
   assert.equal(cards.some((card) => card.rank === "A"), false, "cap-protected research deal should not pull blackjack");
+}
+
+{
+  const session = {
+    bankroll: 30,
+    hands: [hand(19, 20)],
+    dealerHand: [{ rank: "10", suit: "spades" }, { rank: "K", suit: "hearts" }],
+    research: { targetMin: 45 },
+  };
+  const result = chooseResearchOutcome(session);
+  const dealerTotal = getHandValue(result.dealerHand).total;
+  assert.equal(result.dealerHand[0].rank, "10", "player-win research result must preserve visible upcard");
+  assert.ok(dealerTotal >= 17 && dealerTotal < 19, "dealer should stand below player when blackjack rules allow it");
+}
+
+{
+  const session = {
+    bankroll: 30,
+    hands: [hand(14, 20)],
+    dealerHand: [{ rank: "10", suit: "spades" }, { rank: "K", suit: "hearts" }],
+    research: { targetMin: 45 },
+  };
+  const result = chooseResearchOutcome(session);
+  const dealerTotal = getHandValue(result.dealerHand).total;
+  assert.equal(result.dealerHand[0].rank, "10", "bust sequence must preserve visible upcard");
+  assert.ok(dealerTotal > 21, "dealer must bust when player total is too low for a legal dealer stand-loss");
+  assert.ok(getHandValue(result.dealerHand.slice(0, -1)).total < 17, "dealer bust should come from a required hit below 17");
 }
 
 console.log("Research mode engine tests passed.");
